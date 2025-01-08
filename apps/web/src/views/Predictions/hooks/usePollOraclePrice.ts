@@ -1,22 +1,44 @@
-import { useChainlinkOracleContract } from 'hooks/useContract'
-import { useSWRContract } from 'hooks/useSWRContract'
-import { Zero } from '@ethersproject/constants'
-import { useConfig } from '../context/ConfigProvider'
+import { ChainId } from '@pancakeswap/chains'
+import { useReadContract } from '@pancakeswap/wagmi'
+import { chainlinkOracleABI } from 'config/abi/chainlinkOracle'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useMemo } from 'react'
+import { Address } from 'viem'
+import { useGaletoOraclePrice } from './useGaletoOraclePrice'
 
-const usePollOraclePrice = (seconds = 10) => {
-  const { chainlinkOracleAddress } = useConfig()
+interface UsePollOraclePriceProps {
+  chainlinkOracleAddress?: Address
+  galetoOracleAddress?: Address
+}
 
-  const chainlinkOracleContract = useChainlinkOracleContract(chainlinkOracleAddress, false)
-  // Can refactor to subscription later
-  const { data: price, mutate } = useSWRContract([chainlinkOracleContract, 'latestAnswer'], {
-    refreshInterval: seconds * 1000,
-    refreshWhenHidden: true,
-    refreshWhenOffline: true,
-    dedupingInterval: seconds * 1000,
-    fallbackData: Zero,
+const usePollOraclePrice = ({ chainlinkOracleAddress, galetoOracleAddress }: UsePollOraclePriceProps) => {
+  const { chainId } = useActiveChainId()
+
+  const shouldFetchGaletoPrice = useMemo(
+    () => Boolean(galetoOracleAddress && chainId === ChainId.ZKSYNC),
+    [galetoOracleAddress, chainId],
+  )
+
+  const { data: chainlinkOraclePrice = 0n, refetch: refetchChainlinkOraclePrice } = useReadContract({
+    abi: chainlinkOracleABI,
+    address: chainlinkOracleAddress,
+    functionName: 'latestAnswer',
+    chainId,
+    query: {
+      enabled: !shouldFetchGaletoPrice,
+    },
+    watch: !shouldFetchGaletoPrice,
   })
 
-  return { price, refresh: mutate }
+  const { galetoOraclePrice, refetchGaletoOraclePrice } = useGaletoOraclePrice({
+    address: galetoOracleAddress,
+    enabled: shouldFetchGaletoPrice,
+  })
+
+  return {
+    price: shouldFetchGaletoPrice ? galetoOraclePrice : chainlinkOraclePrice,
+    refresh: shouldFetchGaletoPrice ? refetchGaletoOraclePrice : refetchChainlinkOraclePrice,
+  }
 }
 
 export default usePollOraclePrice

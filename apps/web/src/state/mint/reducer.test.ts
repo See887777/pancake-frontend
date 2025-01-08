@@ -1,7 +1,8 @@
-import { createStore, Store } from 'redux'
+import { createStore, Store } from '@reduxjs/toolkit'
 
-import { Field, typeInput } from './actions'
-import reducer, { MintState } from './reducer'
+import { CurrencyField as Field } from 'utils/types'
+import { typeInput } from './actions'
+import { MintState, reducer } from './reducer'
 
 describe('mint reducer', () => {
   let store: Store<MintState>

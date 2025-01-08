@@ -1,6 +1,8 @@
 import { goerliTestnetTokens } from '@pancakeswap/tokens'
-import { SerializedFarmConfig } from '@pancakeswap/farms'
+import { getAddress } from 'viem'
+import { SerializedFarmConfig } from '../..'
 
+// @ts-ignore
 const priceHelperLps: SerializedFarmConfig[] = [
   {
     pid: null,
@@ -9,6 +11,11 @@ const priceHelperLps: SerializedFarmConfig[] = [
     quoteToken: goerliTestnetTokens.usdc,
     token: goerliTestnetTokens.weth,
   },
-].map((p) => ({ ...p, token: p.token.serialize, quoteToken: p.quoteToken.serialize }))
+].map((p) => ({
+  ...p,
+  token: p.token.serialize,
+  quoteToken: p.quoteToken.serialize,
+  lpAddress: getAddress(p.lpAddress),
+}))
 
 export default priceHelperLps

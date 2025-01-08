@@ -1,14 +1,15 @@
-import { Box, Text, Skeleton } from '@pancakeswap/uikit'
-import { fromUnixTime } from 'date-fns'
-import { useState, useMemo, memo, useEffect } from 'react'
-import { ChartEntry, ProtocolData } from 'state/info/types'
+import { Box, Skeleton, Text } from '@pancakeswap/uikit'
+import dayjs from 'dayjs'
+import { memo, useEffect, useMemo, useState } from 'react'
+import { ProtocolData, TvlChartEntry, VolumeChartEntry } from 'state/info/types'
 import { formatAmount } from 'utils/formatInfoNumbers'
 import BarChart from './BarChart'
 import LineChart from './LineChart'
 
 interface HoverableChartProps {
-  chartData: ChartEntry[]
-  protocolData: ProtocolData
+  volumeChartData: VolumeChartEntry[] | undefined
+  tvlChartData: TvlChartEntry[] | undefined
+  protocolData: ProtocolData | undefined
   currentDate: string
   valueProperty: string
   title: string
@@ -16,7 +17,8 @@ interface HoverableChartProps {
 }
 
 const HoverableChart = ({
-  chartData,
+  volumeChartData,
+  tvlChartData,
   protocolData,
   currentDate,
   valueProperty,
@@ -28,33 +30,34 @@ const HoverableChart = ({
 
   // Getting latest data to display on top of chart when not hovered
   useEffect(() => {
-    setHover(null)
+    setHover(undefined)
   }, [protocolData])
 
   useEffect(() => {
-    if (hover == null && protocolData) {
+    if (typeof hover === 'undefined' && protocolData) {
       setHover(protocolData[valueProperty])
     }
   }, [protocolData, hover, valueProperty])
 
   const formattedData = useMemo(() => {
-    if (chartData) {
-      return chartData.map((day) => {
+    const data = valueProperty === 'volumeUSD' ? volumeChartData : tvlChartData
+    if (data) {
+      return data.map((day) => {
         return {
-          time: fromUnixTime(day.date),
+          time: dayjs.unix(day.date).toDate(),
           value: day[valueProperty],
         }
       })
     }
     return []
-  }, [chartData, valueProperty])
+  }, [tvlChartData, valueProperty, volumeChartData])
 
   return (
     <Box p={['16px', '16px', '24px']}>
       <Text bold color="secondary">
         {title}
       </Text>
-      {hover > -1 ? ( // sometimes data is 0
+      {Number(hover) > -1 ? ( // sometimes data is 0
         <Text bold fontSize="24px">
           ${formatAmount(hover)}
         </Text>

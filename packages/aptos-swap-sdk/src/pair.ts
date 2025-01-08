@@ -1,4 +1,3 @@
-import JSBI from 'jsbi'
 import invariant from 'tiny-invariant'
 import {
   Price,
@@ -14,11 +13,22 @@ import {
   sqrt,
   MINIMUM_LIQUIDITY,
 } from '@pancakeswap/swap-sdk-core'
-import { TypeTagParser, TxnBuilderTypes, HexString } from 'aptos'
+import { TypeTagStruct, parseTypeTag } from '@aptos-labs/ts-sdk'
 
+import { HexString } from './hexString'
 import { Currency } from './currency'
 import { PAIR_LP_TYPE_TAG, PAIR_RESERVE_TYPE_TAG } from './constants'
 import { Coin } from './coin'
+
+const typeArgToAddress = (typeArg: TypeTagStruct): string => {
+  const children = typeArg.value.typeArgs
+    .filter((ta): ta is TypeTagStruct => ta.isStruct())
+    .map((ta) => typeArgToAddress(ta))
+
+  return `${HexString.fromUint8Array(typeArg.value.address.data).toShortString()}::${
+    typeArg.value.moduleName.identifier
+  }::${typeArg.value.name.identifier}${children.length > 0 ? `<${children.join(', ')}>` : ''}`
+}
 
 export class Pair {
   public readonly liquidityToken: Coin
@@ -30,38 +40,28 @@ export class Pair {
     return [token0, token1]
   }
 
-  public static getAddress(tokenA: Currency, tokenB: Currency): string {
+  public static getAddress(tokenA: Currency, tokenB: Currency): `0x${string}` {
     const [token0, token1] = this.sortToken(tokenA, tokenB)
 
     return `${PAIR_LP_TYPE_TAG}<${token0.address}, ${token1.address}>`
   }
 
-  public static getReservesAddress(tokenA: Currency, tokenB: Currency): string {
+  public static getReservesAddress(tokenA: Currency, tokenB: Currency): `0x${string}` {
     const [token0, token1] = this.sortToken(tokenA, tokenB)
 
     return `${PAIR_RESERVE_TYPE_TAG}<${token0.address}, ${token1.address}>`
   }
 
   public static parseType(type: string) {
-    const parsedTypeTag = new TypeTagParser(type).parseTypeTag()
-    invariant(parsedTypeTag instanceof TxnBuilderTypes.TypeTagStruct, `Pair type: ${type}`)
-    invariant(parsedTypeTag.value.type_args.length === 2, `Pair type length`)
+    const parsedTypeTag = parseTypeTag(type)
+    invariant(parsedTypeTag.isStruct(), `Pair type: ${type}`)
+    invariant(parsedTypeTag.value.typeArgs.length === 2, `Pair type length`)
 
-    const [typeArg0, tyepArg1] = parsedTypeTag.value.type_args
+    const [typeArg0, typeArg1] = parsedTypeTag.value.typeArgs
 
-    invariant(
-      typeArg0 instanceof TxnBuilderTypes.TypeTagStruct && tyepArg1 instanceof TxnBuilderTypes.TypeTagStruct,
-      'type args'
-    )
+    invariant(typeArg0.isStruct() && typeArg1.isStruct(), 'type args')
 
-    const [address0, address1] = [
-      `${HexString.fromUint8Array(typeArg0.value.address.address).toShortString()}::${
-        typeArg0.value.module_name.value
-      }::${typeArg0.value.name.value}`,
-      `${HexString.fromUint8Array(tyepArg1.value.address.address).toShortString()}::${
-        tyepArg1.value.module_name.value
-      }::${tyepArg1.value.name.value}`,
-    ]
+    const [address0, address1] = [typeArgToAddress(typeArg0), typeArgToAddress(typeArg1)]
 
     return [address0, address1] as const
   }
@@ -148,19 +148,19 @@ export class Pair {
 
   public getOutputAmount(inputAmount: CurrencyAmount<Currency>): [CurrencyAmount<Currency>, Pair] {
     invariant(this.involvesToken(inputAmount.currency), 'TOKEN')
-    if (JSBI.equal(this.reserve0.quotient, ZERO) || JSBI.equal(this.reserve1.quotient, ZERO)) {
+    if (this.reserve0.quotient === ZERO || this.reserve1.quotient === ZERO) {
       throw new InsufficientReservesError()
     }
     const inputReserve = this.reserveOf(inputAmount.currency)
     const outputReserve = this.reserveOf(inputAmount.currency.equals(this.token0) ? this.token1 : this.token0)
-    const inputAmountWithFee = JSBI.multiply(inputAmount.quotient, _9975)
-    const numerator = JSBI.multiply(inputAmountWithFee, outputReserve.quotient)
-    const denominator = JSBI.add(JSBI.multiply(inputReserve.quotient, _10000), inputAmountWithFee)
+    const inputAmountWithFee = inputAmount.quotient * _9975
+    const numerator = inputAmountWithFee * outputReserve.quotient
+    const denominator = inputReserve.quotient * _10000 + inputAmountWithFee
     const outputAmount = CurrencyAmount.fromRawAmount(
       inputAmount.currency.equals(this.token0) ? this.token1 : this.token0,
-      JSBI.divide(numerator, denominator)
+      numerator / denominator
     )
-    if (JSBI.equal(outputAmount.quotient, ZERO)) {
+    if (outputAmount.quotient === ZERO) {
       throw new InsufficientInputAmountError()
     }
     return [outputAmount, new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount))]
@@ -169,20 +169,20 @@ export class Pair {
   public getInputAmount(outputAmount: CurrencyAmount<Currency>): [CurrencyAmount<Currency>, Pair] {
     invariant(this.involvesToken(outputAmount.currency), 'TOKEN')
     if (
-      JSBI.equal(this.reserve0.quotient, ZERO) ||
-      JSBI.equal(this.reserve1.quotient, ZERO) ||
-      JSBI.greaterThanOrEqual(outputAmount.quotient, this.reserveOf(outputAmount.currency).quotient)
+      this.reserve0.quotient === ZERO ||
+      this.reserve1.quotient === ZERO ||
+      outputAmount.quotient >= this.reserveOf(outputAmount.currency).quotient
     ) {
       throw new InsufficientReservesError()
     }
 
     const outputReserve = this.reserveOf(outputAmount.currency)
     const inputReserve = this.reserveOf(outputAmount.currency.equals(this.token0) ? this.token1 : this.token0)
-    const numerator = JSBI.multiply(JSBI.multiply(inputReserve.quotient, outputAmount.quotient), _10000)
-    const denominator = JSBI.multiply(JSBI.subtract(outputReserve.quotient, outputAmount.quotient), _9975)
+    const numerator = inputReserve.quotient * outputAmount.quotient * _10000
+    const denominator = (outputReserve.quotient - outputAmount.quotient) * _9975
     const inputAmount = CurrencyAmount.fromRawAmount(
       outputAmount.currency.equals(this.token0) ? this.token1 : this.token0,
-      JSBI.add(JSBI.divide(numerator, denominator), ONE)
+      numerator / denominator + ONE
     )
     return [inputAmount, new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount))]
   }
@@ -198,18 +198,15 @@ export class Pair {
       : [tokenAmountB, tokenAmountA]
     invariant(tokenAmounts[0].currency.equals(this.token0) && tokenAmounts[1].currency.equals(this.token1), 'TOKEN')
 
-    let liquidity: JSBI
-    if (JSBI.equal(totalSupply.quotient, ZERO)) {
-      liquidity = JSBI.subtract(
-        sqrt(JSBI.multiply(tokenAmounts[0].quotient, tokenAmounts[1].quotient)),
-        MINIMUM_LIQUIDITY
-      )
+    let liquidity: bigint
+    if (totalSupply.quotient === ZERO) {
+      liquidity = sqrt(tokenAmounts[0].quotient * tokenAmounts[1].quotient) - MINIMUM_LIQUIDITY
     } else {
-      const amount0 = JSBI.divide(JSBI.multiply(tokenAmounts[0].quotient, totalSupply.quotient), this.reserve0.quotient)
-      const amount1 = JSBI.divide(JSBI.multiply(tokenAmounts[1].quotient, totalSupply.quotient), this.reserve1.quotient)
-      liquidity = JSBI.lessThanOrEqual(amount0, amount1) ? amount0 : amount1
+      const amount0 = (tokenAmounts[0].quotient * totalSupply.quotient) / this.reserve0.quotient
+      const amount1 = (tokenAmounts[1].quotient * totalSupply.quotient) / this.reserve1.quotient
+      liquidity = amount0 <= amount1 ? amount0 : amount1
     }
-    if (!JSBI.greaterThan(liquidity, ZERO)) {
+    if (!(liquidity > ZERO)) {
       throw new InsufficientInputAmountError()
     }
     return CurrencyAmount.fromRawAmount(this.liquidityToken, liquidity)
@@ -225,21 +222,21 @@ export class Pair {
     invariant(this.involvesToken(token), 'TOKEN')
     invariant(totalSupply.currency.equals(this.liquidityToken), 'TOTAL_SUPPLY')
     invariant(liquidity.currency.equals(this.liquidityToken), 'LIQUIDITY')
-    invariant(JSBI.lessThanOrEqual(liquidity.quotient, totalSupply.quotient), 'LIQUIDITY')
+    invariant(liquidity.quotient <= totalSupply.quotient, 'LIQUIDITY')
 
     let totalSupplyAdjusted: CurrencyAmount<Currency>
     if (!feeOn) {
       totalSupplyAdjusted = totalSupply
     } else {
       invariant(!!kLast, 'K_LAST')
-      const kLastParsed = JSBI.BigInt(kLast)
-      if (!JSBI.equal(kLastParsed, ZERO)) {
-        const rootK = sqrt(JSBI.multiply(this.reserve0.quotient, this.reserve1.quotient))
+      const kLastParsed = BigInt(kLast)
+      if (!(kLastParsed === ZERO)) {
+        const rootK = sqrt(this.reserve0.quotient * this.reserve1.quotient)
         const rootKLast = sqrt(kLastParsed)
-        if (JSBI.greaterThan(rootK, rootKLast)) {
-          const numerator = JSBI.multiply(totalSupply.quotient, JSBI.subtract(rootK, rootKLast))
-          const denominator = JSBI.add(JSBI.multiply(rootK, FIVE), rootKLast)
-          const feeLiquidity = JSBI.divide(numerator, denominator)
+        if (rootK > rootKLast) {
+          const numerator = totalSupply.quotient * (rootK - rootKLast)
+          const denominator = rootK * FIVE + rootKLast
+          const feeLiquidity = numerator / denominator
           totalSupplyAdjusted = totalSupply.add(CurrencyAmount.fromRawAmount(this.liquidityToken, feeLiquidity))
         } else {
           totalSupplyAdjusted = totalSupply
@@ -251,7 +248,7 @@ export class Pair {
 
     return CurrencyAmount.fromRawAmount(
       token,
-      JSBI.divide(JSBI.multiply(liquidity.quotient, this.reserveOf(token).quotient), totalSupplyAdjusted.quotient)
+      (liquidity.quotient * this.reserveOf(token).quotient) / totalSupplyAdjusted.quotient
     )
   }
 }

@@ -1,13 +1,12 @@
-import React from 'react'
-import { Currency, Fraction, Percent, CurrencyAmount, Token } from '@pancakeswap/sdk'
-import { Text, useTooltip, TooltipText, Box, Flex, Svg, SvgProps } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import styled from 'styled-components'
-import { AutoColumn } from 'components/Layout/Column'
-import { AutoRow, RowBetween } from 'components/Layout/Row'
-import { Field } from 'state/burn/actions'
-import { DoubleCurrencyLogo, CurrencyLogo } from 'components/Logo'
+import { Currency, CurrencyAmount, Fraction, Percent, Token } from '@pancakeswap/sdk'
+import { AutoColumn, Box, Flex, Svg, SvgProps, Text, TooltipText, useTooltip } from '@pancakeswap/uikit'
 import { GreyCard } from 'components/Card'
+import { AutoRow, RowBetween } from 'components/Layout/Row'
+import { CurrencyLogo, DoubleCurrencyLogo } from 'components/Logo'
+import React from 'react'
+import { Field } from 'state/burn/actions'
+import { styled } from 'styled-components'
 import { getLPSymbol } from 'utils/getLpSymbol'
 
 const Dot = styled(Box)<{ scale?: 'sm' | 'md' }>`
@@ -16,7 +15,7 @@ const Dot = styled(Box)<{ scale?: 'sm' | 'md' }>`
   border-radius: 50%;
 `
 
-const CircleSvg = ({ percent = 1, ...props }: SvgProps & { percent?: number }) => (
+const CircleSvg = ({ percent = 1, stroke = '#1FC7D4', ...props }: SvgProps & { percent?: number; stroke?: string }) => (
   <Svg width="60px" height="60px" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
     <g filter="url(#filter0_i_1147_113741)">
       <circle r="10" cx="10" cy="10" fill="#7645D9" />
@@ -25,7 +24,7 @@ const CircleSvg = ({ percent = 1, ...props }: SvgProps & { percent?: number }) =
         cx="10"
         cy="10"
         fill="transparent"
-        stroke="#1FC7D4"
+        stroke={stroke}
         strokeWidth="10"
         strokeDasharray={`calc(${percent * 100}px * 31.4 / 100) 31.4`}
         transform="rotate(-90) translate(-20)"
@@ -78,13 +77,19 @@ export const PairDistribution = ({
   currencyBValue?: string
   tooltipTargetRef?: any
 }) => {
+  let stroke: string | undefined
+
+  if (percent === 100) {
+    stroke = currencyAValue ? 'primary' : 'secondary'
+  }
+
   return (
     <AutoColumn gap="8px">
       <Subtitle>{title}</Subtitle>
       <Flex>
         {typeof percent !== 'undefined' && (
           <div ref={tooltipTargetRef}>
-            <CircleSvg percent={percent} mr="34px" />
+            <CircleSvg stroke={stroke} percent={percent} mr="34px" />
           </div>
         )}
         <AutoColumn style={{ width: '100%' }}>
@@ -95,7 +100,7 @@ export const PairDistribution = ({
                 <CurrencyLogo currency={currencyA} />
                 <Text>{currencyA?.symbol}</Text>
               </AutoRow>
-              <Text>{currencyAValue}</Text>
+              <Text>{currencyAValue || '0'}</Text>
             </RowBetween>
           )}
 
@@ -106,7 +111,7 @@ export const PairDistribution = ({
                 <CurrencyLogo currency={currencyB} />
                 <Text>{currencyB?.symbol}</Text>
               </AutoRow>
-              <Text>{currencyBValue}</Text>
+              <Text>{currencyBValue || '0'}</Text>
             </RowBetween>
           )}
         </AutoColumn>
@@ -118,8 +123,8 @@ export const PairDistribution = ({
 interface AddLiquidityModalHeaderProps {
   currencies: { [field in Field]?: Currency }
   poolTokenPercentage?: Percent
-  liquidityMinted: CurrencyAmount<Token>
-  price: Fraction
+  liquidityMinted?: CurrencyAmount<Token>
+  price?: Fraction | null
   allowedSlippage: number
   children: React.ReactNode
   noLiquidity?: boolean
@@ -139,7 +144,6 @@ export const AddLiquidityModalHeader = ({
     t('Output is estimated. If the price changes by more than %slippage%% your transaction will revert.', {
       slippage: allowedSlippage / 100,
     }),
-    { placement: 'auto' },
   )
 
   return (
@@ -169,27 +173,29 @@ export const AddLiquidityModalHeader = ({
         </GreyCard>
       </AutoColumn>
       <RowBetween>
-        <Subtitle>{t('Your pool share')}</Subtitle>
+        <Subtitle>{t('Your share in the pair')}</Subtitle>
         <Text>{noLiquidity ? '100' : poolTokenPercentage?.toSignificant(4)}%</Text>
       </RowBetween>
       <AutoColumn gap="8px">{children}</AutoColumn>
-      <AutoColumn>
-        <RowBetween>
-          <Subtitle>{t('Rates')}</Subtitle>
-          <Text>
-            {`1 ${currencies[Field.CURRENCY_A]?.symbol} = ${price?.toSignificant(4)} ${
-              currencies[Field.CURRENCY_B]?.symbol
-            }`}
-          </Text>
-        </RowBetween>
-        <RowBetween style={{ justifyContent: 'flex-end' }}>
-          <Text>
-            {`1 ${currencies[Field.CURRENCY_B]?.symbol} = ${price?.invert().toSignificant(4)} ${
-              currencies[Field.CURRENCY_A]?.symbol
-            }`}
-          </Text>
-        </RowBetween>
-      </AutoColumn>
+      {!!price && (
+        <AutoColumn>
+          <RowBetween>
+            <Subtitle>{t('Rates')}</Subtitle>
+            <Text>
+              {`1 ${currencies[Field.CURRENCY_A]?.symbol} = ${price?.toSignificant(4)} ${
+                currencies[Field.CURRENCY_B]?.symbol
+              }`}
+            </Text>
+          </RowBetween>
+          <RowBetween style={{ justifyContent: 'flex-end' }}>
+            <Text>
+              {`1 ${currencies[Field.CURRENCY_B]?.symbol} = ${price?.invert()?.toSignificant(4)} ${
+                currencies[Field.CURRENCY_A]?.symbol
+              }`}
+            </Text>
+          </RowBetween>
+        </AutoColumn>
+      )}
       {!noLiquidity && (
         <RowBetween>
           <Subtitle>{t('Slippage Tolerance')}</Subtitle>

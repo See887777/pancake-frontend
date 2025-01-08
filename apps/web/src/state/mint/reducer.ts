@@ -1,5 +1,9 @@
+import { createContext, useContext } from 'react'
 import { createReducer } from '@reduxjs/toolkit'
-import { Field, resetMintState, typeInput } from './actions'
+import { atomWithReducer } from 'jotai/utils'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { CurrencyField as Field } from 'utils/types'
+import { resetMintState, typeInput } from './actions'
 
 export interface MintState {
   readonly independentField: Field
@@ -13,7 +17,7 @@ const initialState: MintState = {
   otherTypedValue: '',
 }
 
-export default createReducer<MintState>(initialState, (builder) =>
+export const reducer = createReducer<MintState>(initialState, (builder) =>
   builder
     .addCase(resetMintState, () => initialState)
     .addCase(typeInput, (state, { payload: { field, typedValue, noLiquidity } }) => {
@@ -43,3 +47,21 @@ export default createReducer<MintState>(initialState, (builder) =>
       }
     }),
 )
+
+export const createFormAtom = () => atomWithReducer(initialState, reducer)
+
+const AddLiquidityV2AtomContext = createContext({
+  formAtom: createFormAtom(),
+})
+
+export const AddLiquidityV2AtomProvider = AddLiquidityV2AtomContext.Provider
+
+export function useAddLiquidityV2FormState() {
+  const ctx = useContext(AddLiquidityV2AtomContext)
+  return useAtomValue(ctx.formAtom)
+}
+
+export function useAddLiquidityV2FormDispatch() {
+  const ctx = useContext(AddLiquidityV2AtomContext)
+  return useSetAtom(ctx.formAtom)
+}

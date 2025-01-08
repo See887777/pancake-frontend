@@ -2,7 +2,7 @@ import { Flex, Text } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
 import isEmpty from 'lodash/isEmpty'
 import { MarketEvent } from 'state/nftMarket/types'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { ListCollectionFilter } from '../components/Filters/ListCollectionFilter'
 import { ActivityFilter } from './ActivityFilter'
 import ClearAllButton from './ClearAllButton'
@@ -19,14 +19,9 @@ export const Container = styled(Flex)`
 const ScrollableFlexContainer = styled(Flex)`
   align-items: center;
   flex: 1;
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  overflow-x: revert;
   -webkit-overflow-scrolling: touch;
-
-  ${({ theme }) => theme.mediaQueries.md} {
-    flex-wrap: wrap;
-    overflow-x: revert;
-  }
 `
 
 interface FiltersProps {

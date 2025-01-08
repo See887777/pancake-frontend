@@ -1,29 +1,48 @@
-import React, { memo, useMemo } from 'react'
-import { BigNumber } from '@ethersproject/bignumber'
-import CountUp from 'react-countup'
+import { BetPosition } from '@pancakeswap/prediction'
 import { Skeleton, TooltipText } from '@pancakeswap/uikit'
-import { formatBigNumberToFixed } from '@pancakeswap/utils/formatBalance'
+import { formatBigIntToFixed } from '@pancakeswap/utils/formatBalance'
+import React, { memo, useMemo } from 'react'
+import CountUp from 'react-countup'
 
 interface LiveRoundPriceProps {
-  isBull: boolean
-  price: BigNumber
+  displayedDecimals: number
+  betPosition: BetPosition
+  price: bigint | number
 }
 
-const LiveRoundPrice: React.FC<React.PropsWithChildren<LiveRoundPriceProps>> = ({ isBull, price }) => {
-  const priceAsNumber = useMemo(() => parseFloat(formatBigNumberToFixed(price, 4, 8)), [price])
+const LiveRoundPrice: React.FC<React.PropsWithChildren<LiveRoundPriceProps>> = ({
+  displayedDecimals,
+  betPosition,
+  price,
+}) => {
+  const priceAsNumber = useMemo(
+    () => (price ? (typeof price === 'number' ? price : parseFloat(formatBigIntToFixed(price, 4, 8))) : 0),
+    [price],
+  )
 
-  const priceColor = isBull ? 'success' : 'failure'
+  const priceColor = useMemo(() => {
+    switch (betPosition) {
+      case BetPosition.BULL:
+        return 'success'
+      case BetPosition.BEAR:
+        return 'failure'
+      case BetPosition.HOUSE:
+      default:
+        return 'textDisabled'
+    }
+  }, [betPosition])
 
   if (!Number.isFinite(priceAsNumber)) {
     return null
   }
 
-  if (price.lt(0)) {
+  //  also works if price is a number
+  if (price < 0n) {
     return <Skeleton height="36px" width="94px" />
   }
 
   return (
-    <CountUp start={0} preserveValue delay={0} end={priceAsNumber} prefix="$" decimals={4} duration={1}>
+    <CountUp start={0} preserveValue delay={0} end={priceAsNumber} prefix="$" decimals={displayedDecimals} duration={1}>
       {({ countUpRef }) => (
         <TooltipText bold color={priceColor} fontSize="24px" style={{ minHeight: '36px' }}>
           <span ref={countUpRef} />

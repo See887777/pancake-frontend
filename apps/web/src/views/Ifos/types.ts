@@ -1,8 +1,13 @@
+import { IfoStatus, PoolIds } from '@pancakeswap/ifos'
 import BigNumber from 'bignumber.js'
-import { BigNumber as EthersBigNumber } from '@ethersproject/bignumber'
-import { Contract } from '@ethersproject/contracts'
 
-import { IfoStatus, PoolIds } from 'config/constants/types'
+import {
+  useIfoV1Contract,
+  useIfoV2Contract,
+  useIfoV3Contract,
+  useIfoV7Contract,
+  useIfoV8Contract,
+} from 'hooks/useContract'
 
 // PoolCharacteristics retrieved from the contract
 export interface PoolCharacteristics {
@@ -15,31 +20,41 @@ export interface PoolCharacteristics {
 
   // extends
   pointThreshold?: number
+  distributionRatio?: number
   admissionProfile?: string
   needQualifiedNFT?: boolean
   needQualifiedPoints?: boolean
   vestingInformation?: VestingInformation
+  hasTax?: boolean
+
+  // 0: public sale
+  // 1: private sale
+  // 2: basic sale
+  saleType?: number
 }
 
 // IFO data unrelated to the user returned by useGetPublicIfoData
 export interface PublicIfoData {
   isInitialized: boolean
   status: IfoStatus
-  blocksRemaining: number
+  blocksRemaining?: number
   secondsUntilStart: number
   progress: number
   secondsUntilEnd: number
-  startBlockNum: number
-  endBlockNum: number
+  startBlockNum?: number
+  endBlockNum?: number
   currencyPriceInUSD: BigNumber
   numberPoints: number
-  thresholdPoints: EthersBigNumber
+  thresholdPoints: bigint
   plannedStartTime?: number
   vestingStartTime?: number
 
   fetchIfoData: (currentBlock: number) => Promise<void>
   [PoolIds.poolBasic]?: PoolCharacteristics
   [PoolIds.poolUnlimited]: PoolCharacteristics
+
+  startTimestamp?: number
+  endTimestamp?: number
 }
 
 export interface VestingInformation {
@@ -79,12 +94,40 @@ export interface WalletIfoState {
   }
 }
 
-// Returned by useGetWalletIfoData
-export interface WalletIfoData extends WalletIfoState {
+type WalletIfoBase = {
   allowance: BigNumber
-  contract: Contract
   setPendingTx: (status: boolean, poolId: PoolIds) => void
   setIsClaimed: (poolId: PoolIds) => void
   fetchIfoData: () => Promise<void>
   resetIfoData: () => void
+} & WalletIfoState
+
+// Returned by useGetWalletIfoData
+export type WalletIfoData = WalletIfoBase & WalletIfoContract
+
+type WalletIfoDataV1Contract = {
+  version: 1
+  contract: ReturnType<typeof useIfoV1Contract>
 }
+type WalletIfoDataV2Contract = {
+  version: 2
+  contract: ReturnType<typeof useIfoV2Contract>
+}
+type WalletIfoDataV3Contract = {
+  version: 3
+  contract: ReturnType<typeof useIfoV3Contract>
+}
+type WalletIfoDataV7Contract = {
+  version: 7
+  contract: ReturnType<typeof useIfoV7Contract>
+}
+type WalletIfoDataV8Contract = {
+  version: 8
+  contract: ReturnType<typeof useIfoV8Contract>
+}
+type WalletIfoContract =
+  | WalletIfoDataV1Contract
+  | WalletIfoDataV2Contract
+  | WalletIfoDataV3Contract
+  | WalletIfoDataV7Contract
+  | WalletIfoDataV8Contract

@@ -1,8 +1,7 @@
-import * as React from 'react'
 import { simulateTransaction, SimulateTransactionArgs, SimulateTransactionResult } from '@pancakeswap/awgmi/core'
-
+import { useMutation } from '@tanstack/react-query'
+import * as React from 'react'
 import { MutationConfig } from '../types'
-import { useMutation } from './utils/useMutation'
 import { useNetwork } from './useNetwork'
 
 export type UseSimulateTransactionArgs = Partial<SimulateTransactionArgs>
@@ -16,12 +15,13 @@ export const mutationKey = (
   // error TS4023: Exported variable 'mutationKey' has or is using name 'MoveFunctionVisibility' from external module
 ) => [{ entity: 'simulateTransaction', ...args }] as const
 
-const mutationFn = async ({ networkName, payload, options, throwOnError }: SimulateTransactionArgs) => {
+const mutationFn = async ({ networkName, payload, options, throwOnError, query }: SimulateTransactionArgs) => {
   return simulateTransaction({
     networkName,
     payload,
     options,
     throwOnError,
+    query,
   } as SimulateTransactionArgs)
 }
 
@@ -29,6 +29,7 @@ export function useSimulateTransaction({
   networkName: networkName_,
   payload,
   options,
+  query,
   throwOnError,
   onError,
   onMutate,
@@ -38,22 +39,15 @@ export function useSimulateTransaction({
   const { chain } = useNetwork()
   const networkName = networkName_ ?? chain?.network
 
-  const { data, error, isError, isIdle, isLoading, isSuccess, mutate, mutateAsync, reset, status, variables } =
-    useMutation(
-      mutationKey({
-        networkName,
-        payload,
-        options,
-        throwOnError,
-      } as SimulateTransactionArgs),
+  const { data, error, isError, isIdle, isPending, isSuccess, mutate, mutateAsync, reset, status, variables } =
+    useMutation({
+      mutationKey: mutationKey({ networkName, payload, options, query, throwOnError }),
       mutationFn,
-      {
-        onError,
-        onMutate,
-        onSettled,
-        onSuccess,
-      },
-    )
+      onError,
+      onMutate,
+      onSettled,
+      onSuccess,
+    })
 
   const _simulateTransaction = React.useCallback(
     (args: UseSimulateTransactionMutationArgs) =>
@@ -61,10 +55,11 @@ export function useSimulateTransaction({
         networkName,
         payload,
         options,
+        query,
         throwOnError,
         ...args,
       } as SimulateTransactionArgs),
-    [mutate, networkName, options, payload, throwOnError],
+    [mutate, networkName, options, payload, query, throwOnError],
   )
 
   const _simulateTransactionAsync = React.useCallback(
@@ -73,10 +68,11 @@ export function useSimulateTransaction({
         networkName,
         payload,
         options,
+        query,
         throwOnError,
         ...args,
       } as SimulateTransactionArgs),
-    [mutateAsync, networkName, options, payload, throwOnError],
+    [mutateAsync, networkName, options, payload, query, throwOnError],
   )
 
   return {
@@ -84,7 +80,7 @@ export function useSimulateTransaction({
     error,
     isError,
     isIdle,
-    isLoading,
+    isPending,
     isSuccess,
     reset,
     simulateTransaction: _simulateTransaction,

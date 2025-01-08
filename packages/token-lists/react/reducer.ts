@@ -27,7 +27,7 @@ export interface ListsState {
   readonly activeListUrls: string[] | undefined
 }
 
-type ListByUrlState = ListsState['byUrl'][string]
+export type ListByUrlState = ListsState['byUrl'][string]
 
 export const NEW_LIST_STATE: ListByUrlState = {
   error: null,
@@ -74,8 +74,8 @@ export const createTokenListReducer = (
           }
         } else {
           // activate if on default active
-          if (DEFAULT_ACTIVE_LIST_URLS.includes(url)) {
-            state.activeListUrls?.push(url)
+          if (DEFAULT_ACTIVE_LIST_URLS.includes(url) && state.activeListUrls && !state.activeListUrls.includes(url)) {
+            state.activeListUrls.push(url)
           }
 
           state.byUrl[url] = {

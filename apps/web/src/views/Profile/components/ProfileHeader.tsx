@@ -1,36 +1,37 @@
+import { useTranslation } from '@pancakeswap/localization'
 import {
-  BscScanIcon,
-  Flex,
-  IconButton,
-  Link,
-  Button,
-  useModal,
-  Grid,
   Box,
+  Button,
+  Flex,
+  Grid,
   Heading,
+  IconButton,
+  ScanLink,
   VisibilityOff,
   VisibilityOn,
-  NextLinkFromReactRouter as ReactRouterLink,
+  useModal,
 } from '@pancakeswap/uikit'
-import { useTranslation } from '@pancakeswap/localization'
-import { getBlockExploreLink, isAddress } from 'utils'
 import { formatNumber } from '@pancakeswap/utils/formatBalance'
 import truncateHash from '@pancakeswap/utils/truncateHash'
-import { Achievement, Profile } from 'state/types'
-import { useAccount } from 'wagmi'
-import { useMemo } from 'react'
+import { NextLinkFromReactRouter as ReactRouterLink } from '@pancakeswap/widgets-internal'
+import { ASSET_CDN } from 'config/constants/endpoints'
+import { useDomainNameForAddress } from 'hooks/useDomain'
 import useGetUsernameWithVisibility from 'hooks/useUsernameWithVisibility'
-import EditProfileAvatar from './EditProfileAvatar'
+import { useMemo } from 'react'
+import { Achievement, Profile } from 'state/types'
+import { getBlockExploreLink, safeGetAddress } from 'utils'
+import { useAccount } from 'wagmi'
 import BannerHeader from '../../Nft/market/components/BannerHeader'
-import StatBox, { StatBoxItem } from '../../Nft/market/components/StatBox'
-import EditProfileModal from './EditProfileModal'
 import AvatarImage from '../../Nft/market/components/BannerHeader/AvatarImage'
+import StatBox, { StatBoxItem } from '../../Nft/market/components/StatBox'
+import EditProfileAvatar from './EditProfileAvatar'
+import EditProfileModal from './EditProfileModal'
 
 interface HeaderProps {
   accountPath: string
-  profile: Profile
-  achievements: Achievement[]
-  nftCollected: number
+  profile: Profile | null
+  achievements: Achievement[] | null
+  nftCollected: number | null
   isAchievementsLoading: boolean
   isNftLoading: boolean
   isProfileLoading: boolean
@@ -50,18 +51,13 @@ const ProfileHeader: React.FC<React.PropsWithChildren<HeaderProps>> = ({
 }) => {
   const { t } = useTranslation()
   const { address: account } = useAccount()
-  const { usernameWithVisibility, userUsernameVisibility, setUserUsernameVisibility } =
-    useGetUsernameWithVisibility(profile)
-  const [onEditProfileModal] = useModal(
-    <EditProfileModal
-      onSuccess={() => {
-        onSuccess?.()
-      }}
-    />,
-    false,
+  const { domainName, avatar: avatarFromDomain } = useDomainNameForAddress(accountPath)
+  const { usernameWithVisibility, userUsernameVisibility, setUserUsernameVisibility } = useGetUsernameWithVisibility(
+    profile?.username || '',
   )
+  const [onEditProfileModal] = useModal(<EditProfileModal onSuccess={onSuccess} />, false)
 
-  const isConnectedAccount = isAddress(account) === isAddress(accountPath)
+  const isConnectedAccount = safeGetAddress(account) === safeGetAddress(accountPath)
   const numNftCollected = !isNftLoading ? (nftCollected ? formatNumber(nftCollected, 0, 0) : '-') : null
   const numPoints = !isProfileLoading ? (profile?.points ? formatNumber(profile.points, 0, 0) : '-') : null
   const numAchievements = !isAchievementsLoading
@@ -70,7 +66,7 @@ const ProfileHeader: React.FC<React.PropsWithChildren<HeaderProps>> = ({
       : '-'
     : null
 
-  const avatarImage = profile?.nft?.image?.thumbnail || '/images/nfts/no-profile-md.png'
+  const avatarImage = profile?.nft?.image?.thumbnail ?? (avatarFromDomain || '/images/nfts/no-profile-md.png')
   const profileTeamId = profile?.teamId
   const profileUsername = isConnectedAccount ? usernameWithVisibility : profile?.username
   const hasProfile = !!profile
@@ -82,7 +78,7 @@ const ProfileHeader: React.FC<React.PropsWithChildren<HeaderProps>> = ({
   const Icon = userUsernameVisibility ? VisibilityOff : VisibilityOn
 
   const bannerImage = useMemo(() => {
-    const imagePath = '/images/teams'
+    const imagePath = `${ASSET_CDN}/web/teams`
     switch (profileTeamId) {
       case 1:
         return `${imagePath}/storm-banner.png`
@@ -111,9 +107,7 @@ const ProfileHeader: React.FC<React.PropsWithChildren<HeaderProps>> = ({
               href={getBlockExploreLink(accountPath, 'address') || ''}
               // @ts-ignore
               alt={t('View BscScan for user address')}
-            >
-              <BscScanIcon width="20px" color="primary" />
-            </IconButton>
+            />
           )}
         </Flex>
       )
@@ -150,11 +144,11 @@ const ProfileHeader: React.FC<React.PropsWithChildren<HeaderProps>> = ({
     }
 
     if (accountPath) {
-      return truncateHash(accountPath, 5, 3)
+      return domainName || truncateHash(accountPath, 5, 3)
     }
 
     return null
-  }, [profileUsername, accountPath])
+  }, [domainName, profileUsername, accountPath])
 
   const description = useMemo(() => {
     const getActivateButton = () => {
@@ -175,14 +169,14 @@ const ProfileHeader: React.FC<React.PropsWithChildren<HeaderProps>> = ({
     return (
       <Flex flexDirection="column" mb={[16, null, 0]} mr={[0, null, 16]}>
         {accountPath && profile?.username && (
-          <Link href={getBlockExploreLink(accountPath, 'address')} external bold color="primary">
-            {truncateHash(accountPath)}
-          </Link>
+          <ScanLink href={getBlockExploreLink(accountPath, 'address')} bold color="primary">
+            {domainName || truncateHash(accountPath)}
+          </ScanLink>
         )}
         {accountPath && isConnectedAccount && (!profile || !profile?.nft) && getActivateButton()}
       </Flex>
     )
-  }, [accountPath, isConnectedAccount, onEditProfileModal, profile, t])
+  }, [domainName, accountPath, isConnectedAccount, onEditProfileModal, profile, t])
 
   return (
     <>

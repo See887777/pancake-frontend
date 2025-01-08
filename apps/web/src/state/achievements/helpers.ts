@@ -1,8 +1,9 @@
-import { request, gql } from 'graphql-request'
-import { campaignMap } from 'config/constants/campaigns'
+import { campaignMap } from '@pancakeswap/achievements'
+import { TranslateFunction } from '@pancakeswap/localization'
 import { GRAPH_API_PROFILE } from 'config/constants/endpoints'
+import { gql, request } from 'graphql-request'
 import { Achievement } from 'state/types'
-import { getAchievementTitle, getAchievementDescription } from 'utils/achievements'
+import { getAchievementDescription, getAchievementTitle } from 'utils/achievements'
 
 interface UserPointIncreaseEvent {
   campaignId: string
@@ -35,36 +36,39 @@ export const getUserPointIncreaseEvents = async (account: string): Promise<UserP
 
     return user.points
   } catch (error) {
-    return null
+    return []
   }
 }
 
 /**
  * Gets all user point increase events and adds achievement meta
  */
-export const getAchievements = async (account: string): Promise<Achievement[]> => {
+export const getAchievements = async (account: string, t: TranslateFunction): Promise<Achievement[]> => {
   const pointIncreaseEvents = await getUserPointIncreaseEvents(account)
 
-  if (!pointIncreaseEvents) {
+  if (!pointIncreaseEvents.length) {
     return []
   }
 
-  return pointIncreaseEvents.reduce((accum, userPoint) => {
+  return pointIncreaseEvents.reduce((accum: Achievement[], userPoint) => {
     if (!campaignMap.has(userPoint.campaignId)) {
       return accum
     }
 
     const campaignMeta = campaignMap.get(userPoint.campaignId)
 
+    if (!campaignMeta?.type || !campaignMeta.badge) return accum
+
     accum.push({
       id: userPoint.campaignId,
       type: campaignMeta.type,
       address: userPoint.id,
-      title: getAchievementTitle(campaignMeta),
-      description: getAchievementDescription(campaignMeta),
+      title: getAchievementTitle(campaignMeta, t),
+      description: getAchievementDescription(campaignMeta, t),
       badge: campaignMeta.badge,
       points: Number(userPoint.points),
     })
+
     return accum
   }, [])
 }

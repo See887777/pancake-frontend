@@ -1,16 +1,18 @@
-import BigNumber from 'bignumber.js'
-import multicall from 'utils/multicall'
-import potteryVaultAbi from 'config/abi/potteryVaultAbi.json'
-import { getPotteryDrawAddress } from 'utils/addressHelpers'
-import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { PotteryDepositStatus } from 'state/types'
+import { ChainId } from '@pancakeswap/chains'
 import { bscTokens } from '@pancakeswap/tokens'
-import { getPotteryDrawContract, getBep20Contract } from 'utils/contractHelpers'
-import { request, gql } from 'graphql-request'
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import BigNumber from 'bignumber.js'
+import { potteryDrawABI } from 'config/abi/potteryDrawAbi'
+import { potteryVaultABI } from 'config/abi/potteryVaultAbi'
 import { GRAPH_API_POTTERY } from 'config/constants/endpoints'
+import { gql, request } from 'graphql-request'
+import { PotteryDepositStatus } from 'state/types'
+import { getPotteryDrawAddress } from 'utils/addressHelpers'
+import { getBep20Contract } from 'utils/contractHelpers'
+import { publicClient } from 'utils/wagmi'
+import { Address } from 'viem'
 
 const potteryDrawAddress = getPotteryDrawAddress()
-const potteryDrawContract = getPotteryDrawContract()
 
 export const fetchLastVaultAddress = async () => {
   try {
@@ -35,28 +37,62 @@ export const fetchLastVaultAddress = async () => {
   }
 }
 
-export const fetchPublicPotteryValue = async (potteryVaultAddress: string) => {
+export const fetchPublicPotteryValue = async (potteryVaultAddress: Address) => {
   try {
-    const calls = [
-      'getStatus',
-      'totalLockCake',
-      'totalSupply',
-      'lockStartTime',
-      'getLockTime',
-      'getMaxTotalDeposit',
-    ].map((method) => ({
-      address: potteryVaultAddress,
-      name: method,
-    }))
-
-    const [getStatus, [totalLockCake], [totalSupply], [lockStartTime], getLockTime, getMaxTotalDeposit] =
-      await multicall(potteryVaultAbi, calls)
-    const [lastDrawId, totalPrize] = await potteryDrawContract.getPot(potteryVaultAddress)
+    const [
+      getStatus,
+      totalLockCake,
+      totalSupply,
+      lockStartTime,
+      getLockTime,
+      getMaxTotalDeposit,
+      { lastDrawId, totalPrize },
+    ] = await publicClient({ chainId: ChainId.BSC }).multicall({
+      contracts: [
+        {
+          abi: potteryVaultABI,
+          address: potteryVaultAddress,
+          functionName: 'getStatus',
+        },
+        {
+          abi: potteryVaultABI,
+          address: potteryVaultAddress,
+          functionName: 'totalLockCake',
+        },
+        {
+          abi: potteryVaultABI,
+          address: potteryVaultAddress,
+          functionName: 'totalSupply',
+        },
+        {
+          abi: potteryVaultABI,
+          address: potteryVaultAddress,
+          functionName: 'lockStartTime',
+        },
+        {
+          abi: potteryVaultABI,
+          address: potteryVaultAddress,
+          functionName: 'getLockTime',
+        },
+        {
+          abi: potteryVaultABI,
+          address: potteryVaultAddress,
+          functionName: 'getMaxTotalDeposit',
+        },
+        {
+          abi: potteryDrawABI,
+          address: potteryDrawAddress,
+          functionName: 'getPot',
+          args: [potteryVaultAddress],
+        },
+      ],
+      allowFailure: false,
+    })
 
     return {
       lastDrawId: new BigNumber(lastDrawId.toString()).toJSON(),
       totalPrize: new BigNumber(totalPrize.toString()).toJSON(),
-      getStatus: getStatus[0],
+      getStatus,
       totalLockCake: new BigNumber(totalLockCake.toString()).toJSON(),
       totalSupply: new BigNumber(totalSupply.toString()).toJSON(),
       lockStartTime: lockStartTime.toString(),
@@ -78,10 +114,10 @@ export const fetchPublicPotteryValue = async (potteryVaultAddress: string) => {
   }
 }
 
-export const fetchTotalLockedValue = async (potteryVaultAddress: string) => {
+export const fetchTotalLockedValue = async (potteryVaultAddress: Address) => {
   try {
     const contract = getBep20Contract(bscTokens.cake.address)
-    const totalLocked = await contract.balanceOf(potteryVaultAddress)
+    const totalLocked = await contract.read.balanceOf([potteryVaultAddress])
 
     return {
       totalLockedValue: new BigNumber(totalLocked.toString()).toJSON(),

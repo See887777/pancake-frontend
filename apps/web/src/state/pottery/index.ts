@@ -1,53 +1,54 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit'
 import { AppState } from 'state'
 import {
-  PotteryState,
-  SerializedPotteryUserData,
-  SerializedPotteryPublicData,
   PotteryDepositStatus,
   PotteryRoundInfo,
+  PotteryState,
+  SerializedPotteryPublicData,
+  SerializedPotteryUserData,
 } from 'state/types'
+import { Address } from 'viem'
 import { resetUserState } from '../global/actions'
-import { fetchPotteryFinishedRound } from './fetchPotteryRound'
 import {
   fetchLastVaultAddress,
+  fetchLatestRoundId,
   fetchPublicPotteryValue,
   fetchTotalLockedValue,
-  fetchLatestRoundId,
 } from './fetchPottery'
+import { fetchPotteryFinishedRound } from './fetchPotteryRound'
 import {
   fetchPotterysAllowance,
-  fetchVaultUserData,
   fetchUserDrawData,
+  fetchVaultUserData,
   fetchWithdrawAbleData,
 } from './fetchUserPottery'
 
 const initialState: PotteryState = Object.freeze({
-  lastVaultAddress: '',
+  lastVaultAddress: null,
   publicData: {
     lastDrawId: '',
-    totalPrize: null,
+    totalPrize: '',
     getStatus: PotteryDepositStatus.BEFORE_LOCK,
-    totalLockCake: null,
-    totalSupply: null,
+    totalLockCake: '',
+    totalSupply: '',
     lockStartTime: '',
     lockTime: 0,
-    totalLockedValue: null,
+    totalLockedValue: '',
     latestRoundId: '',
-    maxTotalDeposit: null,
+    maxTotalDeposit: '',
   },
   userData: {
     isLoading: true,
-    allowance: null,
-    previewDepositBalance: null,
-    stakingTokenBalance: null,
-    rewards: null,
-    winCount: null,
+    allowance: '',
+    previewDepositBalance: '',
+    stakingTokenBalance: '',
+    rewards: '',
+    winCount: '',
     withdrawAbleData: [],
   },
   finishedRoundInfo: {
     isFetched: false,
-    roundId: null,
+    roundId: '',
     drawDate: '',
     prizePot: '',
     totalPlayers: '',
@@ -62,11 +63,13 @@ export const fetchLastVaultAddressAsync = createAsyncThunk<string>('pottery/fetc
   return lastVaultAddress
 })
 
-export const fetchPublicPotteryDataAsync = createAsyncThunk<SerializedPotteryPublicData>(
+export const fetchPublicPotteryDataAsync = createAsyncThunk<SerializedPotteryPublicData | undefined>(
   'pottery/fetchPublicPotteryData',
   async (arg, { getState }) => {
     const state = getState()
     const potteryVaultAddress = (state as AppState).pottery.lastVaultAddress
+
+    if (!potteryVaultAddress) return undefined
 
     const [publicPotteryData, totalLockedValue, latestRoundId] = await Promise.all([
       fetchPublicPotteryValue(potteryVaultAddress),
@@ -77,17 +80,20 @@ export const fetchPublicPotteryDataAsync = createAsyncThunk<SerializedPotteryPub
   },
 )
 
-export const fetchPotteryUserDataAsync = createAsyncThunk<SerializedPotteryUserData, string>(
+export const fetchPotteryUserDataAsync = createAsyncThunk<SerializedPotteryUserData | undefined, string>(
   'pottery/fetchPotteryUserData',
   async (account, { rejectWithValue, getState }) => {
     try {
       const state = getState()
       const potteryVaultAddress = (state as AppState).pottery.lastVaultAddress
+
+      if (!potteryVaultAddress) return undefined
+
       const [allowance, vaultUserData, drawData, withdrawAbleData] = await Promise.all([
-        fetchPotterysAllowance(account, potteryVaultAddress),
-        fetchVaultUserData(account, potteryVaultAddress),
-        fetchUserDrawData(account),
-        fetchWithdrawAbleData(account),
+        fetchPotterysAllowance(account as Address, potteryVaultAddress),
+        fetchVaultUserData(account as Address, potteryVaultAddress),
+        fetchUserDrawData(account as Address),
+        fetchWithdrawAbleData(account as Address),
       ])
 
       const userData = {
@@ -131,21 +137,29 @@ export const PotterySlice = createSlice({
       state.userData = { ...initialState.userData }
     })
     builder.addCase(fetchLastVaultAddressAsync.fulfilled, (state, action: PayloadAction<string>) => {
-      state.lastVaultAddress = action.payload
+      state.lastVaultAddress = action.payload as Address
     })
     builder.addCase(
       fetchPublicPotteryDataAsync.fulfilled,
-      (state, action: PayloadAction<SerializedPotteryPublicData>) => {
-        state.publicData = { ...action.payload }
+      (state, action: PayloadAction<SerializedPotteryPublicData | undefined>) => {
+        if (action.payload) {
+          state.publicData = { ...action.payload }
+        }
       },
     )
-    builder.addCase(fetchPotteryUserDataAsync.fulfilled, (state, action: PayloadAction<SerializedPotteryUserData>) => {
-      const userData = action.payload
-      state.userData = {
-        ...userData,
-        isLoading: false,
-      }
-    })
+    builder.addCase(
+      fetchPotteryUserDataAsync.fulfilled,
+      (state, action: PayloadAction<SerializedPotteryUserData | undefined>) => {
+        const userData = action.payload
+
+        if (userData) {
+          state.userData = {
+            ...userData,
+            isLoading: false,
+          }
+        }
+      },
+    )
     builder.addCase(fetchPotteryRoundData.fulfilled, (state, action: PayloadAction<PotteryRoundInfo>) => {
       state.finishedRoundInfo = { ...action.payload }
     })

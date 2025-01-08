@@ -1,33 +1,90 @@
 /* eslint-disable camelcase */
 import { AptosCoin, Coin } from '@pancakeswap/aptos-swap-sdk'
-import { Pool } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
 import { PoolCategory } from 'config/constants/types'
 import BigNumber from 'bignumber.js'
 import _toNumber from 'lodash/toNumber'
 import _get from 'lodash/get'
 import { FixedNumber } from '@ethersproject/bignumber'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import _find from 'lodash/find'
+import { getBalanceNumber } from '@pancakeswap/utils/formatBalance'
 
 import { PoolResource } from '../types'
 import getSecondsLeftFromNow from '../utils/getSecondsLeftFromNow'
-import splitTypeTag from '../utils/splitTypeTag'
+import splitTypeTag from '../../../utils/splitTypeTag'
 import getTokenByAddress from '../utils/getTokenByAddress'
 import { getPoolApr } from './transformCakePool'
 
+function calcPendingRewardToken({
+  currentTimestamp,
+  lastRewardTimestamp,
+  totalStakedToken,
+  userStakedAmount,
+  rewardPerSecond,
+  currentRewardDebt,
+  tokenPerShare,
+  precisionFactor,
+  endTime,
+  isFinished,
+}): FixedNumber {
+  const pendingSeconds = Math.max(
+    isFinished ? endTime - lastRewardTimestamp : getSecondsLeftFromNow(lastRewardTimestamp, currentTimestamp),
+    0,
+  )
+
+  if (pendingSeconds === 0) {
+    return FixedNumber.from(0)
+  }
+
+  const multiplier = FixedNumber.from(pendingSeconds)
+
+  const rewardPendingToken = FixedNumber.from(rewardPerSecond).mulUnsafe(multiplier)
+
+  const totalStake = FixedNumber.from(totalStakedToken)
+
+  const precision = FixedNumber.from(precisionFactor)
+
+  const latestTokenPerShare = FixedNumber.from(tokenPerShare).addUnsafe(
+    rewardPendingToken.mulUnsafe(precision).divUnsafe(totalStake),
+  )
+
+  const rewardDebt = FixedNumber.from(currentRewardDebt)
+
+  const pendingReward = FixedNumber.from(userStakedAmount)
+    .mulUnsafe(latestTokenPerShare)
+    .divUnsafe(precision)
+    .subUnsafe(rewardDebt)
+
+  return pendingReward
+}
+
 const transformPool = (
   resource: PoolResource,
+  currentTimestamp,
   balances,
   chainId,
   prices,
+  sousId,
 ): Pool.DeserializedPool<Coin | AptosCoin> | undefined => {
+  const startTime = _toNumber(_get(resource, 'data.start_timestamp', '0'))
+
+  const startYet = getSecondsLeftFromNow(startTime, currentTimestamp)
+
+  if (!startYet) return undefined
+
+  const endTime = _toNumber(_get(resource, 'data.end_timestamp', '0'))
+
+  const hasRewardToken = _toNumber(_get(resource, 'data.total_reward_token.value', '0'))
+
+  const isFinished = getSecondsLeftFromNow(endTime, currentTimestamp) || !hasRewardToken
+
   const [stakingAddress, earningAddress] = splitTypeTag(resource.type)
 
   let userData = {
-    allowance: new BigNumber(0),
-    pendingReward: new BigNumber(0),
-    stakedBalance: new BigNumber(0),
-    stakingTokenBalance: new BigNumber(0),
+    allowance: BIG_ZERO,
+    pendingReward: BIG_ZERO,
+    stakedBalance: BIG_ZERO,
+    stakingTokenBalance: BIG_ZERO,
   }
 
   const totalStakedToken = _get(resource, 'data.total_staked_token.value', '0')
@@ -46,44 +103,35 @@ const transformPool = (
     )
 
     if (foundStakedPoolBalance) {
-      const currentRewardDebt = _get(foundStakedPoolBalance, 'data.reward_debt')
-
-      const userStakedAmount = _get(foundStakedPoolBalance, 'data.amount')
+      const userStakedAmount = _toNumber(_get(foundStakedPoolBalance, 'data.amount', '0'))
 
       if (userStakedAmount && _toNumber(totalStakedToken)) {
+        const currentRewardDebt = _get(foundStakedPoolBalance, 'data.reward_debt')
         const lastRewardTimestamp = _toNumber(_get(resource, 'data.last_reward_timestamp'))
+        const tokenPerShare = _get(resource, 'data.acc_token_per_share')
+        const precisionFactor = _get(resource, 'data.precision_factor')
 
-        const multiplier = FixedNumber.from(getSecondsLeftFromNow(lastRewardTimestamp))
-
-        const frewardPerSecond = FixedNumber.from(rewardPerSecond)
-
-        const rewardPendingToken = frewardPerSecond.mulUnsafe(multiplier)
-
-        const tokenPerShare = FixedNumber.from(_get(resource, 'data.acc_token_per_share'))
-        const precisionFactor = FixedNumber.from(_get(resource, 'data.precision_factor'))
-        const totalStake = FixedNumber.from(totalStakedToken)
-
-        const latestTokenPerShare = tokenPerShare.addUnsafe(
-          rewardPendingToken.mulUnsafe(precisionFactor).divUnsafe(totalStake),
-        )
-
-        const rewardDebt = FixedNumber.from(currentRewardDebt)
-
-        const pendingReward = FixedNumber.from(userStakedAmount)
-          .mulUnsafe(latestTokenPerShare)
-          .divUnsafe(precisionFactor)
-          .subUnsafe(rewardDebt)
+        const pendingReward = calcPendingRewardToken({
+          currentTimestamp,
+          currentRewardDebt,
+          lastRewardTimestamp,
+          totalStakedToken,
+          userStakedAmount,
+          rewardPerSecond,
+          tokenPerShare,
+          precisionFactor,
+          endTime,
+          isFinished,
+        }).toString()
 
         userData = {
           ...userData,
-          pendingReward: new BigNumber(pendingReward.toString()),
+          pendingReward: new BigNumber(pendingReward),
           stakedBalance: new BigNumber(userStakedAmount),
         }
       }
     }
   }
-
-  const nowInSeconds = Math.floor(Date.now() / 1000)
 
   const stakingToken = getTokenByAddress({ chainId, address: stakingAddress })
   const earningToken = getTokenByAddress({ chainId, address: earningAddress })
@@ -96,28 +144,38 @@ const transformPool = (
   const apr =
     getPoolApr({
       rewardTokenPrice: _toNumber(earningTokenPrice),
-      stakingTokenPrice: _toNumber(earningTokenPrice),
-      tokenPerSecond: rewardPerSecond,
-      totalStaked: totalStakedToken,
+      stakingTokenPrice: _toNumber(stakingTokenPrice),
+      tokenPerSecond: getBalanceNumber(new BigNumber(rewardPerSecond), earningToken.decimals),
+      totalStaked: getBalanceNumber(new BigNumber(totalStakedToken), stakingToken.decimals),
     }) || 0
 
+  const startTimestamp = _toNumber(resource.data.start_timestamp)
+
+  const stakeLimitSeconds = _toNumber(resource.data.seconds_for_user_limit)
+  const stakingLimitEndTimestamp = stakeLimitSeconds + startTimestamp
+
+  const stakeLimitTimeRemaining = stakingLimitEndTimestamp - Math.floor(currentTimestamp / 1000)
+
   return {
-    // Ignore sousId
-    sousId: 0,
-    contractAddress: {
-      [chainId]: resource.type,
-    },
+    sousId,
+    contractAddress: resource.type as `0x${string}`,
     stakingToken,
     earningToken,
     apr,
     earningTokenPrice,
     stakingTokenPrice,
 
-    isFinished: nowInSeconds > +resource.data.end_timestamp,
+    isFinished: Boolean(isFinished),
     poolCategory: PoolCategory.CORE,
-    startBlock: _toNumber(resource.data.start_timestamp),
+    startTimestamp,
+    endTimestamp: _toNumber(resource.data.end_timestamp),
+
     tokenPerBlock: resource.data.reward_per_second,
-    stakingLimit: resource.data.pool_limit_per_user ? new BigNumber(resource.data.pool_limit_per_user) : BIG_ZERO,
+    stakingLimit:
+      stakeLimitTimeRemaining > 0 && resource.data.pool_limit_per_user
+        ? new BigNumber(resource.data.pool_limit_per_user)
+        : BIG_ZERO,
+    stakingLimitEndTimestamp,
     totalStaked: new BigNumber(totalStakedToken),
 
     userData,

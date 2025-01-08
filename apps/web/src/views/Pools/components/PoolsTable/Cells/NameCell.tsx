@@ -1,40 +1,44 @@
-import { Text, TokenPairImage as UITokenPairImage, useMatchBreakpoints, Skeleton, Pool } from '@pancakeswap/uikit'
+import { useTranslation } from '@pancakeswap/localization'
+import { checkIsBoostedPool } from '@pancakeswap/pools'
+import { Token } from '@pancakeswap/sdk'
+import { Box, Flex, Skeleton, Text, TokenPairImage as UITokenPairImage, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import { FarmWidget, Pool } from '@pancakeswap/widgets-internal'
 import BigNumber from 'bignumber.js'
 import { TokenPairImage } from 'components/TokenImage'
 import { vaultPoolConfig } from 'config/constants/pools'
-import { useTranslation } from '@pancakeswap/localization'
-import { memo } from 'react'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { ReactNode, memo, useMemo } from 'react'
 import { useVaultPoolByKey } from 'state/pools/hooks'
-import { VaultKey, DeserializedLockedCakeVault } from 'state/types'
-import styled from 'styled-components'
-import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { getVaultPosition, VaultPosition, VaultPositionParams } from 'utils/cakePool'
-import { Token } from '@pancakeswap/sdk'
-import BaseCell, { CellContent } from './BaseCell'
+import { DeserializedLockedCakeVault, VaultKey } from 'state/types'
+import { styled } from 'styled-components'
+import { VaultPosition, VaultPositionParams, getVaultPosition } from 'utils/cakePool'
+
+const { AlpBoostedTag } = FarmWidget.Tags
 
 interface NameCellProps {
   pool: Pool.DeserializedPool<Token>
+  tooltip?: ReactNode
 }
 
-const StyledCell = styled(BaseCell)`
+export const StyledCell = styled(Pool.BaseCell)`
   flex: 5;
   flex-direction: row;
   padding-left: 12px;
   ${({ theme }) => theme.mediaQueries.sm} {
-    flex: 1 0 150px;
+    flex: 0 0 210px;
     padding-left: 32px;
   }
 `
 
-const NameCell: React.FC<React.PropsWithChildren<NameCellProps>> = ({ pool }) => {
+const NameCell: React.FC<React.PropsWithChildren<NameCellProps>> = ({ pool, tooltip }) => {
   const { t } = useTranslation()
+  const { chainId } = useActiveChainId()
   const { isMobile } = useMatchBreakpoints()
   const { sousId, stakingToken, earningToken, userData, isFinished, vaultKey, totalStaked } = pool
-  const vaultData = useVaultPoolByKey(pool.vaultKey)
-  const {
-    userData: { userShares },
-    totalCakeInVault,
-  } = vaultData
+  const vaultData = useVaultPoolByKey(pool?.vaultKey || VaultKey.CakeVault)
+  const { totalCakeInVault } = vaultData
+  const userShares = vaultData?.userData?.userShares ?? BIG_ZERO
   const hasVaultShares = userShares.gt(0)
 
   const stakingTokenSymbol = stakingToken.symbol
@@ -54,45 +58,78 @@ const NameCell: React.FC<React.PropsWithChildren<NameCellProps>> = ({ pool }) =>
     subtitle = vaultPoolConfig[vaultKey].description
   }
 
+  const isLoaded = useMemo(() => {
+    if (pool.vaultKey) {
+      return totalCakeInVault && totalCakeInVault.gte(0)
+    }
+    return totalStaked && totalStaked.gte(0)
+  }, [pool.vaultKey, totalCakeInVault, totalStaked])
+
+  const isBoostedPool = useMemo(
+    () => Boolean(!isFinished && chainId && checkIsBoostedPool(pool.contractAddress, chainId)),
+    [pool, isFinished, chainId],
+  )
+
   return (
     <StyledCell role="cell">
-      {(totalStaked && totalStaked.gte(0)) || (totalCakeInVault && totalCakeInVault.gte(0)) ? (
+      {isLoaded ? (
         <>
           {vaultKey ? (
-            <UITokenPairImage {...vaultPoolConfig[vaultKey].tokenImage} mr="8px" width={40} height={40} />
+            <UITokenPairImage
+              {...vaultPoolConfig[vaultKey].tokenImage}
+              mr="8px"
+              width={40}
+              height={40}
+              style={{ minWidth: 40 }}
+            />
           ) : (
-            <TokenPairImage primaryToken={earningToken} secondaryToken={stakingToken} mr="8px" width={40} height={40} />
+            <TokenPairImage
+              primaryToken={earningToken}
+              secondaryToken={stakingToken}
+              mr="8px"
+              width={40}
+              height={40}
+              style={{ minWidth: 40 }}
+            />
           )}
-          <CellContent>
+          <Pool.CellContent>
             {showStakedTag &&
               (vaultKey === VaultKey.CakeVault ? (
                 <StakedCakeStatus
                   userShares={userShares}
-                  locked={(vaultData as DeserializedLockedCakeVault).userData.locked}
-                  lockEndTime={(vaultData as DeserializedLockedCakeVault).userData.lockEndTime}
+                  locked={(vaultData as DeserializedLockedCakeVault)?.userData?.locked}
+                  lockEndTime={(vaultData as DeserializedLockedCakeVault)?.userData?.lockEndTime}
                 />
               ) : (
                 <Text fontSize="12px" bold color={isFinished ? 'failure' : 'secondary'} textTransform="uppercase">
                   {t('Staked')}
                 </Text>
               ))}
-            <Text bold={!isMobile} small={isMobile}>
-              {title}
-            </Text>
+            <Flex>
+              <Text bold={!isMobile} small={isMobile}>
+                {title}
+              </Text>
+              {tooltip}
+            </Flex>
             {showSubtitle && (
               <Text fontSize="12px" color="textSubtle">
                 {subtitle}
               </Text>
             )}
-          </CellContent>
+            {!isMobile && isBoostedPool && (
+              <Box width="fit-content" mt="4px">
+                <AlpBoostedTag scale="sm" />
+              </Box>
+            )}
+          </Pool.CellContent>
         </>
       ) : (
         <>
           <Skeleton mr="8px" width={36} height={36} variant="circle" />
-          <CellContent>
+          <Pool.CellContent>
             <Skeleton width={30} height={12} mb="4px" />
             <Skeleton width={65} height={12} />
-          </CellContent>
+          </Pool.CellContent>
         </>
       )}
     </StyledCell>

@@ -1,27 +1,37 @@
-import { ChainId, Currency } from '@pancakeswap/sdk'
-import { BinanceIcon } from '@pancakeswap/uikit'
-import { useMemo } from 'react'
-import { WrappedTokenInfo } from '@pancakeswap/token-lists'
-import styled from 'styled-components'
+import { ChainId } from '@pancakeswap/chains'
 import { useHttpLocations } from '@pancakeswap/hooks'
+import { Currency } from '@pancakeswap/sdk'
+import { WrappedTokenInfo } from '@pancakeswap/token-lists'
+import { BinanceIcon, TokenLogo } from '@pancakeswap/uikit'
+import { ASSET_CDN } from 'config/constants/endpoints'
+import { useMemo } from 'react'
+import { styled } from 'styled-components'
 import getTokenLogoURL from '../../utils/getTokenLogoURL'
-import Logo from './Logo'
 
-const StyledLogo = styled(Logo)<{ size: string }>`
+const StyledLogo = styled(TokenLogo)<{ size: string }>`
   width: ${({ size }) => size};
   height: ${({ size }) => size};
   border-radius: 50%;
 `
 
-export default function CurrencyLogo({
-  currency,
-  size = '24px',
-  style,
-}: {
+interface LogoProps {
   currency?: Currency
   size?: string
   style?: React.CSSProperties
-}) {
+}
+
+export function FiatLogo({ currency, size = '24px', style }: LogoProps) {
+  return (
+    <StyledLogo
+      size={size}
+      srcs={[`${ASSET_CDN}/web/onramp/currencies/${currency?.symbol?.toLowerCase()}.png`]}
+      width={size}
+      style={style}
+    />
+  )
+}
+
+export default function CurrencyLogo({ currency, size = '24px', style }: LogoProps) {
   const uriLocations = useHttpLocations(currency instanceof WrappedTokenInfo ? currency.logoURI : undefined)
 
   const srcs: string[] = useMemo(() => {
@@ -44,7 +54,9 @@ export default function CurrencyLogo({
     if (currency.chainId === ChainId.BSC) {
       return <BinanceIcon width={size} style={style} />
     }
-    return <StyledLogo size={size} srcs={[`/images/chains/${currency.chainId}.png`]} width={size} style={style} />
+    return (
+      <StyledLogo size={size} srcs={[`${ASSET_CDN}/web/native/${currency.chainId}.png`]} width={size} style={style} />
+    )
   }
 
   return <StyledLogo size={size} srcs={srcs} alt={`${currency?.symbol ?? 'token'} logo`} style={style} />

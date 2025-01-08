@@ -1,41 +1,87 @@
-/* eslint-disable import/prefer-default-export */
-import BigNumber from 'bignumber.js'
-import poolsConfig from 'config/constants/pools'
-import sousChefV2 from 'config/abi/sousChefV2.json'
-import multicall from '../multicall'
-import { bscRpcProvider } from '../providers'
-import { getAddress } from '../addressHelpers'
+import { ChainId } from '@pancakeswap/chains'
+import { SerializedPool, getPoolsConfig } from '@pancakeswap/pools'
+
+import chunk from 'lodash/chunk'
+import { publicClient } from 'utils/wagmi'
+
+const ABI = [
+  {
+    inputs: [],
+    name: 'startBlock',
+    outputs: [
+      {
+        internalType: 'uint256',
+        name: '',
+        type: 'uint256',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'bonusEndBlock',
+    outputs: [
+      {
+        internalType: 'uint256',
+        name: '',
+        type: 'uint256',
+      },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const
 
 /**
  * Returns the total number of pools that were active at a given block
  */
-export const getActivePools = async (block?: number) => {
+export const getActivePools = async (chainId: ChainId, block?: number): Promise<SerializedPool[]> => {
+  const poolsConfig = await getPoolsConfig(chainId)
   const eligiblePools = poolsConfig
-    .filter((pool) => pool.sousId !== 0)
-    .filter((pool) => pool.isFinished === false || pool.isFinished === undefined)
-  const blockNumber = block || (await bscRpcProvider.getBlockNumber())
-  const startBlockCalls = eligiblePools.map(({ contractAddress }) => ({
-    address: getAddress(contractAddress, 56),
-    name: 'startBlock',
-  }))
-  const endBlockCalls = eligiblePools.map(({ contractAddress }) => ({
-    address: getAddress(contractAddress, 56),
-    name: 'bonusEndBlock',
-  }))
-  const [startBlocks, endBlocks] = await Promise.all([
-    multicall(sousChefV2, startBlockCalls),
-    multicall(sousChefV2, endBlockCalls),
-  ])
+    ? poolsConfig
+        .filter((pool) => pool.sousId !== 0)
+        .filter((pool) => pool.isFinished === false || pool.isFinished === undefined)
+    : []
+  const startBlockCalls = eligiblePools.map(
+    ({ contractAddress }) =>
+      ({
+        abi: ABI,
+        address: contractAddress,
+        functionName: 'startBlock',
+      } as const),
+  )
+  const endBlockCalls = eligiblePools.map(
+    ({ contractAddress }) =>
+      ({
+        abi: ABI,
+        address: contractAddress,
+        functionName: 'bonusEndBlock',
+      } as const),
+  )
 
-  return eligiblePools.reduce((accum, poolCheck, index) => {
-    const startBlock = startBlocks[index] ? new BigNumber(startBlocks[index]) : null
-    const endBlock = endBlocks[index] ? new BigNumber(endBlocks[index]) : null
+  const calls = [...startBlockCalls, ...endBlockCalls]
+  const resultsRaw = await publicClient({ chainId }).multicall({
+    contracts: calls,
+    allowFailure: false,
+  })
+
+  const blockNumber = block ? BigInt(block) : await publicClient({ chainId }).getBlockNumber()
+
+  const blockCallsRaw = chunk(resultsRaw, resultsRaw.length / 2)
+
+  const startBlocks = blockCallsRaw[0]
+  const endBlocks = blockCallsRaw[1]
+
+  return eligiblePools.reduce<SerializedPool[]>((accum, poolCheck, index) => {
+    const startBlock = startBlocks[index] ? startBlocks[index] : null
+    const endBlock = endBlocks[index] ? endBlocks[index] : null
 
     if (!startBlock || !endBlock) {
       return accum
     }
 
-    if (startBlock.gte(blockNumber) || endBlock.lte(blockNumber)) {
+    if (startBlock >= blockNumber || endBlock <= blockNumber) {
       return accum
     }
 

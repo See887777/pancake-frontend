@@ -1,28 +1,27 @@
-import { Profile } from 'state/types'
-import { PancakeProfile } from 'config/abi/types/PancakeProfile'
-import profileABI from 'config/abi/pancakeProfile.json'
+import { ChainId } from '@pancakeswap/chains'
+import { pancakeProfileABI } from 'config/abi/pancakeProfile'
 import { API_PROFILE } from 'config/constants/endpoints'
-import { getTeam } from 'state/teams/helpers'
-import { NftToken } from 'state/nftMarket/types'
 import { getNftApi } from 'state/nftMarket/helpers'
-import { multicallv2 } from 'utils/multicall'
+import { NftToken } from 'state/nftMarket/types'
+import { getTeam } from 'state/teams/helpers'
+import { Profile } from 'state/types'
 import { getPancakeProfileAddress } from 'utils/addressHelpers'
+import { publicClient } from 'utils/wagmi'
+import { Address } from 'viem'
 
 export interface GetProfileResponse {
   hasRegistered: boolean
   profile?: Profile
 }
 
-const transformProfileResponse = (
-  profileResponse: Awaited<ReturnType<PancakeProfile['getUserProfile']>>,
-): Partial<Profile> => {
+const transformProfileResponse = (profileResponse): Partial<Profile> => {
   const { 0: userId, 1: numberPoints, 2: teamId, 3: collectionAddress, 4: tokenId, 5: isActive } = profileResponse
 
   return {
-    userId: userId.toNumber(),
-    points: numberPoints.toNumber(),
-    teamId: teamId.toNumber(),
-    tokenId: tokenId.toNumber(),
+    userId: Number(userId),
+    points: Number(numberPoints),
+    teamId: Number(teamId),
+    tokenId: Number(tokenId),
     collectionAddress,
     isActive,
   }
@@ -44,32 +43,45 @@ export const getUsername = async (address: string): Promise<string> => {
   }
 }
 
-export const getProfile = async (address: string): Promise<GetProfileResponse> => {
+export const getProfile = async (address: string): Promise<GetProfileResponse | null> => {
   try {
-    const profileCalls = ['hasRegistered', 'getUserProfile'].map((method) => {
-      return { address: getPancakeProfileAddress(), name: method, params: [address] }
+    const client = publicClient({ chainId: ChainId.BSC })
+
+    const profileCallsResult = await client.multicall({
+      contracts: [
+        {
+          address: getPancakeProfileAddress(),
+          abi: pancakeProfileABI,
+          functionName: 'hasRegistered',
+          args: [address as Address],
+        },
+        {
+          address: getPancakeProfileAddress(),
+          abi: pancakeProfileABI,
+          functionName: 'getUserProfile',
+          args: [address as Address],
+        },
+      ],
     })
-    const profileCallsResult = await multicallv2({
-      abi: profileABI,
-      calls: profileCalls,
-      options: { requireSuccess: false },
-    })
-    const [[hasRegistered], profileResponse] = profileCallsResult
+
+    const [{ result: hasRegistered }, { result: profileResponse }] = profileCallsResult
     if (!hasRegistered) {
-      return { hasRegistered, profile: null }
+      return { hasRegistered: Boolean(hasRegistered), profile: undefined }
     }
 
     const { userId, points, teamId, tokenId, collectionAddress, isActive } = transformProfileResponse(profileResponse)
     const [team, username, nftRes] = await Promise.all([
-      getTeam(teamId),
+      teamId ? getTeam(teamId) : Promise.resolve(null),
       getUsername(address),
-      isActive ? getNftApi(collectionAddress, tokenId.toString()) : Promise.resolve(null),
+      isActive && collectionAddress && tokenId
+        ? getNftApi(collectionAddress, tokenId.toString())
+        : Promise.resolve(null),
     ])
-    let nftToken: NftToken
+    let nftToken: NftToken | undefined
 
     // If the profile is not active the tokenId returns 0, which is still a valid token id
     // so only fetch the nft data if active
-    if (nftRes) {
+    if (nftRes && collectionAddress) {
       nftToken = {
         tokenId: nftRes.tokenId,
         name: nftRes.name,
@@ -84,6 +96,8 @@ export const getProfile = async (address: string): Promise<GetProfileResponse> =
           thumbnail: nftRes.image?.thumbnail,
         },
       }
+    } else {
+      nftToken = undefined
     }
 
     const profile = {

@@ -1,19 +1,24 @@
 // TODO PCS refactor ternaries
 /* eslint-disable no-nested-ternary */
 import { useTranslation } from '@pancakeswap/localization'
-import { ChainId } from '@pancakeswap/sdk'
+import { ArrowBackIcon, ArrowForwardIcon, Box, Flex, Radio, ScanLink, Skeleton, Text } from '@pancakeswap/uikit'
 import truncateHash from '@pancakeswap/utils/truncateHash'
-import { ArrowBackIcon, ArrowForwardIcon, Box, Flex, LinkExternal, Radio, Skeleton, Text } from '@pancakeswap/uikit'
 import { ITEMS_PER_INFO_TABLE_PAGE } from 'config/constants/info'
-import { formatDistanceToNowStrict } from 'date-fns'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { useGetChainName } from 'state/info/hooks'
+import { ChainLinkSupportChains, multiChainId } from 'state/info/constant'
+import { useChainIdByQuery, useChainNameByQuery } from 'state/info/hooks'
 import { Transaction, TransactionType } from 'state/info/types'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { getBlockExploreLink } from 'utils'
 
+import { useDomainNameForAddress } from 'hooks/useDomain'
 import { formatAmount } from 'utils/formatInfoNumbers'
+import { getTokenSymbolAlias } from 'utils/getTokenAlias'
 import { Arrow, Break, ClickableColumnHeader, PageButtons, TableWrapper } from './shared'
+
+dayjs.extend(relativeTime)
 
 const Wrapper = styled.div`
   width: 100%;
@@ -99,40 +104,59 @@ const DataRow: React.FC<React.PropsWithChildren<{ transaction: Transaction }>> =
   const { t } = useTranslation()
   const abs0 = Math.abs(transaction.amountToken0)
   const abs1 = Math.abs(transaction.amountToken1)
-  const outputTokenSymbol = transaction.amountToken0 < 0 ? transaction.token0Symbol : transaction.token1Symbol
-  const inputTokenSymbol = transaction.amountToken1 < 0 ? transaction.token0Symbol : transaction.token1Symbol
-  const chainName = useGetChainName()
+  const chainName = useChainNameByQuery()
+  const chainId = useChainIdByQuery()
+  const { domainName } = useDomainNameForAddress(transaction.sender)
+  const token0Symbol = getTokenSymbolAlias(transaction.token0Address, chainId, transaction.token0Symbol)
+  const token1Symbol = getTokenSymbolAlias(transaction.token1Address, chainId, transaction.token1Symbol)
+
+  const outputTokenSymbol = transaction.amountToken0 < 0 ? token0Symbol : token1Symbol
+  const inputTokenSymbol = transaction.amountToken1 < 0 ? token0Symbol : token1Symbol
+
   return (
     <ResponsiveGrid>
-      <LinkExternal
-        href={getBlockExploreLink(transaction.hash, 'transaction', chainName === 'ETH' && ChainId.ETHEREUM)}
+      <ScanLink
+        useBscCoinFallback={ChainLinkSupportChains.includes(multiChainId[chainName])}
+        href={getBlockExploreLink(transaction.hash, 'transaction', multiChainId[chainName])}
       >
         <Text>
           {transaction.type === TransactionType.MINT
-            ? t('Add %token0% and %token1%', { token0: transaction.token0Symbol, token1: transaction.token1Symbol })
+            ? t('Add %token0% and %token1%', {
+                token0: token0Symbol,
+                token1: token1Symbol,
+              })
             : transaction.type === TransactionType.SWAP
-            ? t('Swap %token0% for %token1%', { token0: inputTokenSymbol, token1: outputTokenSymbol })
-            : t('Remove %token0% and %token1%', { token0: transaction.token0Symbol, token1: transaction.token1Symbol })}
+            ? t('Swap %token0% for %token1%', {
+                token0: inputTokenSymbol,
+                token1: outputTokenSymbol,
+              })
+            : t('Remove %token0% and %token1%', {
+                token0: token0Symbol,
+                token1: token1Symbol,
+              })}
         </Text>
-      </LinkExternal>
+      </ScanLink>
       <Text>${formatAmount(transaction.amountUSD)}</Text>
       <Text>
-        <Text>{`${formatAmount(abs0)} ${transaction.token0Symbol}`}</Text>
+        <Text>{`${formatAmount(abs0)} ${token0Symbol}`}</Text>
       </Text>
       <Text>
-        <Text>{`${formatAmount(abs1)} ${transaction.token1Symbol}`}</Text>
+        <Text>{`${formatAmount(abs1)} ${token1Symbol}`}</Text>
       </Text>
-      <LinkExternal href={getBlockExploreLink(transaction.sender, 'address', chainName === 'ETH' && ChainId.ETHEREUM)}>
-        {truncateHash(transaction.sender)}
-      </LinkExternal>
-      <Text>{formatDistanceToNowStrict(parseInt(transaction.timestamp, 10) * 1000)}</Text>
+      <ScanLink
+        useBscCoinFallback={ChainLinkSupportChains.includes(multiChainId[chainName])}
+        href={getBlockExploreLink(transaction.sender, 'address', multiChainId[chainName])}
+      >
+        {domainName || truncateHash(transaction.sender)}
+      </ScanLink>
+      <Text>{dayjs.unix(parseInt(transaction.timestamp, 10)).toNow(true)}</Text>
     </ResponsiveGrid>
   )
 }
 
 const TransactionTable: React.FC<
   React.PropsWithChildren<{
-    transactions: Transaction[]
+    transactions: Transaction[] | undefined
   }>
 > = ({ transactions }) => {
   const [sortField, setSortField] = useState(SORT_FIELD.timestamp)
@@ -148,8 +172,7 @@ const TransactionTable: React.FC<
   const sortedTransactions = useMemo(() => {
     const toBeAbsList = [SORT_FIELD.amountToken0, SORT_FIELD.amountToken1]
     return transactions
-      ? transactions
-          .slice()
+      ? [...transactions]
           .sort((a, b) => {
             if (a && b) {
               const firstField = a[sortField as keyof Transaction]
@@ -157,6 +180,7 @@ const TransactionTable: React.FC<
               const [first, second] = toBeAbsList.includes(sortField)
                 ? [Math.abs(firstField as number), Math.abs(secondField as number)]
                 : [firstField, secondField]
+              if (!first || !second) return -1
               return first > second ? (sortDirection ? -1 : 1) * 1 : (sortDirection ? -1 : 1) * -1
             }
             return -1
@@ -183,7 +207,7 @@ const TransactionTable: React.FC<
   }, [transactions, txFilter])
 
   const handleFilter = useCallback(
-    (newFilter: TransactionType) => {
+    (newFilter: TransactionType | undefined) => {
       if (newFilter !== txFilter) {
         setTxFilter(newFilter)
         setPage(1)

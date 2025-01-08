@@ -1,18 +1,22 @@
-import { Flex, Link, LinkExternal, Skeleton, Text, TimerIcon, Balance, Pool } from '@pancakeswap/uikit'
-import AddToWalletButton, { AddToWalletTextOptions } from 'components/AddToWallet/AddToWalletButton'
-import { bsc } from '@pancakeswap/wagmi/chains'
+import { Flex, LinkExternal, ScanLink, Skeleton, Text } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
+
 import { useTranslation } from '@pancakeswap/localization'
-import { memo } from 'react'
+import { DeserializedLockedCakeVault } from '@pancakeswap/pools'
+import { Token } from '@pancakeswap/sdk'
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import AddToWalletButton, { AddToWalletTextOptions } from 'components/AddToWallet/AddToWalletButton'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { memo, useMemo } from 'react'
 import { useCurrentBlock } from 'state/block/hooks'
+import { getTokenInfoPath } from 'state/info/utils'
 import { useVaultPoolByKey } from 'state/pools/hooks'
 import { VaultKey } from 'state/types'
 import { getBlockExploreLink } from 'utils'
-import { getAddress, getVaultPoolAddress } from 'utils/addressHelpers'
-import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import { getVaultPoolAddress } from 'utils/addressHelpers'
 import { getPoolBlockInfo } from 'views/Pools/helpers'
-import { Token } from '@pancakeswap/sdk'
 import MaxStakeRow from './MaxStakeRow'
-import { AprInfo, DurationAvg, PerformanceFee, TotalLocked, TotalStaked } from './Stat'
+import { AprInfo, DurationAvg, TotalLocked } from './Stat'
 
 interface ExpandedFooterProps {
   pool: Pool.DeserializedPool<Token>
@@ -29,15 +33,16 @@ const PoolStatsInfo: React.FC<React.PropsWithChildren<ExpandedFooterProps>> = ({
 }) => {
   const { t } = useTranslation()
   const currentBlock = useCurrentBlock()
+  const { chainId } = useActiveChainId()
 
   const {
     stakingToken,
     earningToken,
     totalStaked,
-    startBlock,
-    endBlock,
+    startTimestamp,
+    endTimestamp,
     stakingLimit,
-    stakingLimitEndBlock,
+    stakingLimitEndTimestamp,
     contractAddress,
     vaultKey,
     profileRequirement,
@@ -47,19 +52,22 @@ const PoolStatsInfo: React.FC<React.PropsWithChildren<ExpandedFooterProps>> = ({
 
   const stakedBalance = poolUserData?.stakedBalance ? poolUserData.stakedBalance : BIG_ZERO
 
-  const {
-    totalCakeInVault,
-    totalLockedAmount,
-    fees: { performanceFeeAsDecimal },
-    userData,
-  } = useVaultPoolByKey(vaultKey)
+  const { totalCakeInVault, totalLockedAmount } = useVaultPoolByKey(
+    vaultKey as Pool.VaultKey,
+  ) as DeserializedLockedCakeVault
 
   const tokenAddress = earningToken.address || ''
-  const poolContractAddress = getAddress(contractAddress)
-  const cakeVaultContractAddress = getVaultPoolAddress(vaultKey)
+  const poolContractAddress = contractAddress
+  const cakeVaultContractAddress = vaultKey ? getVaultPoolAddress(vaultKey, chainId) : ''
 
-  const { shouldShowBlockCountdown, blocksUntilStart, blocksRemaining, hasPoolStarted, blocksToDisplay } =
-    getPoolBlockInfo(pool, currentBlock)
+  const { shouldShowBlockCountdown, timeUntilStart, timeRemaining, hasPoolStarted } = getPoolBlockInfo(
+    pool,
+    currentBlock,
+  )
+  const tokenInfoPath = useMemo(
+    () => (chainId ? getTokenInfoPath(chainId, earningToken.address) : ''),
+    [chainId, earningToken.address],
+  )
 
   return (
     <>
@@ -70,7 +78,7 @@ const PoolStatsInfo: React.FC<React.PropsWithChildren<ExpandedFooterProps>> = ({
             {profileRequirement.required && t('Pancake Profile')}{' '}
             {profileRequirement.thresholdPoints.gt(0) && (
               <Text small>
-                {profileRequirement.thresholdPoints.toNumber().toLocaleString()} {t('Profile Points')}
+                {profileRequirement.thresholdPoints.toNumber()} {t('Profile Points')}
               </Text>
             )}
           </Text>
@@ -78,9 +86,16 @@ const PoolStatsInfo: React.FC<React.PropsWithChildren<ExpandedFooterProps>> = ({
       )}
       {!vaultKey && <AprInfo pool={pool} stakedBalance={stakedBalance} />}
       {showTotalStaked && (
-        <TotalStaked totalStaked={vaultKey ? totalCakeInVault : totalStaked} stakingToken={stakingToken} />
+        <Pool.TotalStaked
+          totalStaked={(vaultKey ? totalCakeInVault : totalStaked) || BIG_ZERO}
+          tokenDecimals={stakingToken.decimals}
+          symbol={stakingToken.symbol}
+          decimalsToShow={0}
+        />
       )}
-      {vaultKey === VaultKey.CakeVault && <TotalLocked totalLocked={totalLockedAmount} lockedToken={stakingToken} />}
+      {vaultKey === VaultKey.CakeVault && (
+        <TotalLocked totalLocked={totalLockedAmount || BIG_ZERO} lockedToken={stakingToken} />
+      )}
       {vaultKey === VaultKey.CakeVault && <DurationAvg />}
       {!isFinished && stakingLimit && stakingLimit.gt(0) && (
         <MaxStakeRow
@@ -88,31 +103,23 @@ const PoolStatsInfo: React.FC<React.PropsWithChildren<ExpandedFooterProps>> = ({
           currentBlock={currentBlock}
           hasPoolStarted={hasPoolStarted}
           stakingLimit={stakingLimit}
-          stakingLimitEndBlock={stakingLimitEndBlock}
+          stakingLimitEndTimestamp={stakingLimitEndTimestamp || 0}
           stakingToken={stakingToken}
+          endTimestamp={endTimestamp || 0}
         />
       )}
       {shouldShowBlockCountdown && (
         <Flex mb="2px" justifyContent="space-between" alignItems="center">
           <Text small>{hasPoolStarted ? t('Ends in') : t('Starts in')}:</Text>
-          {blocksRemaining || blocksUntilStart ? (
-            <Flex alignItems="center">
-              <Link external href={getBlockExploreLink(hasPoolStarted ? endBlock : startBlock, 'countdown')}>
-                <Balance small value={blocksToDisplay} decimals={0} color="primary" />
-                <Text small ml="4px" color="primary" textTransform="lowercase">
-                  {t('Blocks')}
-                </Text>
-                <TimerIcon ml="4px" color="primary" />
-              </Link>
-            </Flex>
+          {timeRemaining || timeUntilStart ? (
+            <Pool.TimeCountdownDisplay timestamp={(hasPoolStarted ? endTimestamp : startTimestamp) || 0} />
           ) : (
             <Skeleton width="54px" height="21px" />
           )}
         </Flex>
       )}
-      {vaultKey && <PerformanceFee userData={userData} performanceFeeAsDecimal={performanceFeeAsDecimal} />}
       <Flex mb="2px" justifyContent={alignLinksToRight ? 'flex-end' : 'flex-start'}>
-        <LinkExternal href={`/info/token/${earningToken.address}`} bold={false} small>
+        <LinkExternal href={tokenInfoPath || undefined} bold={false} small>
           {t('See Token Info')}
         </LinkExternal>
       </Flex>
@@ -125,22 +132,24 @@ const PoolStatsInfo: React.FC<React.PropsWithChildren<ExpandedFooterProps>> = ({
       )}
       {vaultKey && (
         <Flex mb="2px" justifyContent={alignLinksToRight ? 'flex-end' : 'flex-start'}>
-          <LinkExternal href="https://docs.pancakeswap.finance/products/syrup-pool/new-cake-pool" bold={false} small>
+          <LinkExternal href="https://docs.pancakeswap.finance/products/vecake/how-to-get-vecake" bold={false} small>
             {t('View Tutorial')}
           </LinkExternal>
         </Flex>
       )}
       {poolContractAddress && (
         <Flex mb="2px" justifyContent={alignLinksToRight ? 'flex-end' : 'flex-start'}>
-          <LinkExternal
-            href={`${bsc.blockExplorers.default.url}/address/${
-              vaultKey ? cakeVaultContractAddress : poolContractAddress
-            }`}
+          <ScanLink
+            href={getBlockExploreLink(
+              (vaultKey ? cakeVaultContractAddress : poolContractAddress) ?? '',
+              'address',
+              chainId,
+            )}
             bold={false}
             small
           >
             {t('View Contract')}
-          </LinkExternal>
+          </ScanLink>
         </Flex>
       )}
       {account && tokenAddress && (

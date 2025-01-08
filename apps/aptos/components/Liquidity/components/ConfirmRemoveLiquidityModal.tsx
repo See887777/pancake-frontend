@@ -1,13 +1,11 @@
 import React, { useCallback } from 'react'
 import { Currency, CurrencyAmount, Pair, Percent, Token } from '@pancakeswap/aptos-swap-sdk'
 import { AddIcon, AutoColumn, Button, InjectedModalProps, RowBetween, RowFixed, Text } from '@pancakeswap/uikit'
+import { ConfirmationModalContent, TransactionErrorContent } from '@pancakeswap/widgets-internal'
 import { useTranslation } from '@pancakeswap/localization'
-import TransactionConfirmationModal, {
-  ConfirmationModalContent,
-  TransactionErrorContent,
-} from 'components/TransactionConfirmationModal'
+import TransactionConfirmationModal from 'components/TransactionConfirmationModal'
 import { CurrencyLogo, DoubleCurrencyLogo } from 'components/Logo'
-import { useUserSlippage } from 'state/user'
+import { useUserSlippage } from '@pancakeswap/utils/user'
 import formatAmountDisplay from 'utils/formatAmountDisplay'
 
 import { Field } from '../type'

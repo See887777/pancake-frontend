@@ -1,23 +1,27 @@
+import { FarmWithStakedValue } from '@pancakeswap/farms'
 import { useTranslation } from '@pancakeswap/localization'
 import { Flex, Skeleton, Text } from '@pancakeswap/uikit'
+import { LightGreyCard } from 'components/Card'
 import { ConnectWalletButton } from 'components/ConnectWalletButton'
-import { useFarmEarning } from 'state/farms/hook'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { HarvestActionContainer } from '../FarmTable/Actions/HarvestAction'
 import { StakedContainer } from '../FarmTable/Actions/StakedAction'
 import HarvestAction from './HarvestAction'
 import StakeAction from './StakeAction'
 
-const Action = styled.div`
-  padding-top: 16px;
+const GreyLine = styled.div`
+  margin: 24px 0;
+  border-top: 2px solid ${({ theme }) => theme.colors.cardBorder};
 `
 
 interface FarmCardActionsProps {
-  farm: any
+  farm: FarmWithStakedValue
   account?: string
   addLiquidityUrl?: string
   lpLabel?: string
   displayApr?: string
+  farmCakePerSecond?: string
+  totalMultipliers?: string
 }
 
 const CardActions: React.FC<React.PropsWithChildren<FarmCardActionsProps>> = ({
@@ -26,28 +30,29 @@ const CardActions: React.FC<React.PropsWithChildren<FarmCardActionsProps>> = ({
   addLiquidityUrl,
   lpLabel,
   displayApr,
+  farmCakePerSecond,
+  totalMultipliers,
 }) => {
   const { t } = useTranslation()
-  const { pid } = farm
-  const earnings = useFarmEarning(farm.pid)
+  const { pid, lpAddress, dual } = farm
+  const { earnings, earningsDualTokenBalance } = farm.userData || {}
   const isReady = farm.multiplier !== undefined
 
   return (
-    <Action>
-      <Flex>
-        <Text bold textTransform="uppercase" color="secondary" fontSize="12px" pr="4px">
-          CAKE
-        </Text>
-        <Text bold textTransform="uppercase" color="textSubtle" fontSize="12px">
-          {t('Earned')}
-        </Text>
-      </Flex>
-      <HarvestActionContainer earnings={earnings} pid={pid}>
+    <LightGreyCard mt="24px" padding="16px">
+      <HarvestActionContainer
+        pid={pid}
+        lpAddress={lpAddress}
+        earnings={earnings}
+        dual={dual}
+        earningsDualTokenBalance={earningsDualTokenBalance}
+      >
         {(props) => <HarvestAction {...props} />}
       </HarvestActionContainer>
+      <GreyLine />
       {isReady ? (
         <Flex>
-          <Text bold textTransform="uppercase" color="secondary" fontSize="12px" pr="4px">
+          <Text bold color="secondary" fontSize="12px" pr="4px">
             {farm.lpSymbol}
           </Text>
           <Text bold textTransform="uppercase" color="textSubtle" fontSize="12px">
@@ -60,11 +65,18 @@ const CardActions: React.FC<React.PropsWithChildren<FarmCardActionsProps>> = ({
       {!account ? (
         <ConnectWalletButton mt="8px" width="100%" />
       ) : (
-        <StakedContainer {...farm} lpLabel={lpLabel} addLiquidityUrl={addLiquidityUrl} displayApr={displayApr}>
+        <StakedContainer
+          {...farm}
+          lpLabel={lpLabel}
+          displayApr={displayApr}
+          addLiquidityUrl={addLiquidityUrl}
+          farmCakePerSecond={farmCakePerSecond}
+          totalMultipliers={totalMultipliers}
+        >
           {(props) => <StakeAction {...props} />}
         </StakedContainer>
       )}
-    </Action>
+    </LightGreyCard>
   )
 }
 

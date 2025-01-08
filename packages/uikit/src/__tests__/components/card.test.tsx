@@ -1,6 +1,6 @@
-import React from "react";
+import { expect, it } from "vitest";
+import { Card, CardBody, CardFooter, CardHeader } from "../../components/Card";
 import { renderWithProvider } from "../../testHelpers";
-import { Card, CardBody, CardHeader, CardFooter } from "../../components/Card";
 
 it("renders correctly", () => {
   const { asFragment } = renderWithProvider(
@@ -30,7 +30,7 @@ it("renders correctly", () => {
     }
 
     .c3 {
-      padding: 24px;
+      padding: 16px;
     }
 
     .c2 {
@@ -42,6 +42,12 @@ it("renders correctly", () => {
     .c4 {
       border-top: 1px solid var(--colors-cardBorder);
       padding: 24px;
+    }
+
+    @media screen and (min-width: 576px) {
+      .c3 {
+        padding: 24px;
+      }
     }
 
     <div

@@ -4,7 +4,6 @@ import {
   Currency,
   CurrencyAmount,
   Fraction,
-  JSBI,
   Percent,
   TradeType,
 } from '@pancakeswap/aptos-swap-sdk'
@@ -17,6 +16,7 @@ import {
   INPUT_FRACTION_AFTER_FEE,
 } from 'config/constants/exchange'
 import { Field } from 'state/swap'
+import memoize from 'lodash/memoize'
 
 // TODO: aptos merge with exchange
 export function warningSeverity(priceImpact: Percent | undefined): 0 | 1 | 2 | 3 | 4 {
@@ -64,9 +64,9 @@ export function computeTradePriceBreakdown(trade?: Trade<Currency, Currency, Tra
 }
 
 // converts a basis points value to a sdk percent
-export function basisPointsToPercent(num: number): Percent {
-  return new Percent(JSBI.BigInt(num), BIPS_BASE)
-}
+export const basisPointsToPercent = memoize((num: number): Percent => {
+  return new Percent(BigInt(num), BIPS_BASE)
+})
 
 export function computeSlippageAdjustedAmounts(
   trade: Trade<Currency, Currency, TradeType> | undefined,
@@ -79,12 +79,12 @@ export function computeSlippageAdjustedAmounts(
   }
 }
 
-export function calculateSlippageAmount(value: CurrencyAmount<Currency>, slippage: number): [JSBI, JSBI] {
+export function calculateSlippageAmount(value: CurrencyAmount<Currency>, slippage: number): [bigint, bigint] {
   if (slippage < 0 || slippage > 10000) {
     throw Error(`Unexpected slippage value: ${slippage}`)
   }
   return [
-    JSBI.divide(JSBI.multiply(value.quotient, JSBI.BigInt(10000 - slippage)), BIPS_BASE),
-    JSBI.divide(JSBI.multiply(value.quotient, JSBI.BigInt(10000 + slippage)), BIPS_BASE),
+    (value.quotient * BigInt(10000 - slippage)) / BIPS_BASE,
+    (value.quotient * BigInt(10000 + slippage)) / BIPS_BASE,
   ]
 }

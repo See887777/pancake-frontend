@@ -1,13 +1,19 @@
-import { ReactElement, useMemo } from 'react'
 import shuffle from 'lodash/shuffle'
+import { type ReactElement, useMemo } from 'react'
 import CompetitionBanner from '../CompetitionBanner'
-import IFOBanner from '../IFOBanner'
-import LotteryBanner from '../LotteryBanner'
-import PerpetualBanner from '../PerpetualBanner'
-import useIsRenderIfoBanner from './useIsRenderIFOBanner'
-import useIsRenderLotteryBanner from './useIsRenderLotteryBanner'
+import { EigenpieIFOBanner } from '../EigenpieIFOBanner'
+import { FourMemeBanner } from '../FourMemeBanner'
+import { OptionsBanner } from '../OptionsBanner'
+import { PCSXBanner } from '../PCSXBanner'
+import { QuestBanner } from '../QuestBanner'
+import { TgPredictionBotBanner } from '../TgPredictionBotBanner'
+import UserBanner from '../UserBanner'
+import { V4InfoBanner } from '../V4InfoBanner'
+import { VeCakeBanner } from '../VeCakeBanner'
+import WebNotificationBanner from '../WebNotificationBanner'
 import useIsRenderCompetitionBanner from './useIsRenderCompetitionBanner'
-import AptosBanner from '../AptosBanner'
+import { useIsRenderIfoBannerFromConfig } from './useIsRenderIFOBanner'
+import useIsRenderUserBanner from './useIsRenderUserBanner'
 
 interface IBannerConfig {
   shouldRender: boolean
@@ -26,17 +32,50 @@ interface IBannerConfig {
  *  },
  * ```
  */
+
 export const useMultipleBannerConfig = () => {
-  const isRenderIFOBanner = useIsRenderIfoBanner()
-  const isRenderLotteryBanner = useIsRenderLotteryBanner()
   const isRenderCompetitionBanner = useIsRenderCompetitionBanner()
+  const isRenderUserBanner = useIsRenderUserBanner()
+  const isRenderIFOBannerFromConfig = useIsRenderIfoBannerFromConfig()
 
   return useMemo(() => {
     const NO_SHUFFLE_BANNERS: IBannerConfig[] = [
-      { shouldRender: true, banner: <AptosBanner /> },
       {
-        shouldRender: isRenderIFOBanner,
-        banner: <IFOBanner />,
+        shouldRender: isRenderUserBanner.shouldRender && !isRenderUserBanner.isEarningsBusdZero,
+        banner: <UserBanner />,
+      },
+      {
+        shouldRender: isRenderIFOBannerFromConfig,
+        banner: <EigenpieIFOBanner />,
+      },
+      {
+        shouldRender: true,
+        banner: <PCSXBanner />,
+      },
+      {
+        shouldRender: true,
+        banner: <TgPredictionBotBanner />,
+      },
+      {
+        shouldRender: true,
+        banner: <WebNotificationBanner />,
+      },
+      {
+        shouldRender: true,
+        banner: <QuestBanner />,
+      },
+      {
+        shouldRender: true,
+        banner: <FourMemeBanner />,
+      },
+      {
+        shouldRender: true,
+        banner: <OptionsBanner />,
+      },
+      { shouldRender: true, banner: <VeCakeBanner /> },
+      {
+        shouldRender: true,
+        banner: <V4InfoBanner />,
       },
     ]
 
@@ -45,17 +84,22 @@ export const useMultipleBannerConfig = () => {
         shouldRender: isRenderCompetitionBanner,
         banner: <CompetitionBanner />,
       },
+    ]
+    return [
+      ...NO_SHUFFLE_BANNERS,
+      ...shuffle(SHUFFLE_BANNERS),
       {
-        shouldRender: isRenderLotteryBanner,
-        banner: <LotteryBanner />,
-      },
-      {
-        shouldRender: true,
-        banner: <PerpetualBanner />,
+        // be the last one if harvest value is zero
+        shouldRender: isRenderUserBanner.shouldRender && isRenderUserBanner.isEarningsBusdZero,
+        banner: <UserBanner />,
       },
     ]
-    return [...NO_SHUFFLE_BANNERS, ...shuffle(SHUFFLE_BANNERS)]
       .filter((bannerConfig: IBannerConfig) => bannerConfig.shouldRender)
       .map((bannerConfig: IBannerConfig) => bannerConfig.banner)
-  }, [isRenderIFOBanner, isRenderLotteryBanner, isRenderCompetitionBanner])
+  }, [
+    isRenderCompetitionBanner,
+    isRenderUserBanner.isEarningsBusdZero,
+    isRenderUserBanner.shouldRender,
+    isRenderIFOBannerFromConfig,
+  ])
 }

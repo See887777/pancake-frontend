@@ -1,7 +1,8 @@
 /* eslint-disable no-continue */
 /* eslint-disable no-await-in-loop */
-import { TokenList } from '@pancakeswap/token-lists'
+import { TokenList, TokenInfo } from '@pancakeswap/token-lists'
 import uriToHttp from '@pancakeswap/utils/uriToHttp'
+import remove from 'lodash/remove'
 import Ajv from 'ajv'
 import schema from '../schema/pancakeswap.json'
 
@@ -33,12 +34,26 @@ export default async function getTokenList(listUrl: string): Promise<TokenList> 
 
     const json = await response.json()
     if (!tokenListValidator(json)) {
-      const validationErrors: string =
+      const preFilterValidationErrors: string =
         tokenListValidator.errors?.reduce<string>((memo, error) => {
           const add = `${(error as any).dataPath} ${error.message ?? ''}`
           return memo.length > 0 ? `${memo}; ${add}` : `${add}`
         }, '') ?? 'unknown error'
-      throw new Error(`Token list failed validation: ${validationErrors}`)
+      if (json.tokens) {
+        remove<TokenInfo>(json.tokens, (token) => {
+          return !tokenListValidator({ ...json, tokens: [token] })
+        })
+      }
+      if (!tokenListValidator(json)) {
+        const validationErrors: string =
+          tokenListValidator.errors?.reduce<string>((memo, error) => {
+            const add = `${(error as any).dataPath} ${error.message ?? ''}`
+            return memo.length > 0 ? `${memo}; ${add}` : `${add}`
+          }, '') ?? 'unknown error'
+        throw new Error(`Token list ${url} failed validation: ${validationErrors}`)
+      } else {
+        console.warn(`Token list ${url} validation failed before token filtering: ${preFilterValidationErrors}`)
+      }
     }
     return json as TokenList
   }

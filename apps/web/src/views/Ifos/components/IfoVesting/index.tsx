@@ -1,12 +1,12 @@
 import { useMemo, useState, useCallback, useEffect } from 'react'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { useTranslation } from '@pancakeswap/localization'
-import Trans from 'components/Trans'
-import { Box, Card, CardBody, CardHeader, Flex, Text, Image, Pool } from '@pancakeswap/uikit'
+import { Box, Card, CardBody, CardHeader, Flex, Text, Image, IfoNotTokens } from '@pancakeswap/uikit'
 import { useAccount } from 'wagmi'
-import { Token } from '@pancakeswap/sdk'
+
+import Trans from 'components/Trans'
+
 import { VestingStatus } from './types'
-import NotTokens from './NotTokens'
 import TokenInfo from './VestingPeriod/TokenInfo'
 import VestingEnded from './VestingEnded'
 import useFetchVestingData from '../../hooks/vesting/useFetchVestingData'
@@ -18,7 +18,7 @@ const StyleVestingCard = styled(Card)`
   align-self: baseline;
   ${({ theme }) => theme.mediaQueries.xl} {
     max-width: 350px;
-    margin: -22px 12px 0 12px;
+    margin: 0 12px 0 12px;
   }
 `
 
@@ -26,7 +26,7 @@ const VestingCardBody = styled(CardBody)`
   position: relative;
   z-index: 2;
   overflow-y: auto;
-  max-height: 570px;
+  max-height: 640px;
   padding-bottom: 0;
   border-radius: 0 0 24px 24px;
 `
@@ -60,10 +60,10 @@ const IfoVestingStatus = {
 }
 
 interface IfoVestingProps {
-  pool: Pool.DeserializedPool<Token>
+  ifoBasicSaleType?: number
 }
 
-const IfoVesting: React.FC<React.PropsWithChildren<IfoVestingProps>> = () => {
+const IfoVesting: React.FC<React.PropsWithChildren<IfoVestingProps>> = ({ ifoBasicSaleType }: IfoVestingProps) => {
   const { t } = useTranslation()
   const { address: account } = useAccount()
   const [isFirstTime, setIsFirstTime] = useState(true)
@@ -113,11 +113,23 @@ const IfoVesting: React.FC<React.PropsWithChildren<IfoVestingProps>> = () => {
         </Flex>
       </CardHeader>
       <VestingCardBody>
-        {cardStatus.status === VestingStatus.NOT_TOKENS_CLAIM && <NotTokens />}
+        {cardStatus.status === VestingStatus.NOT_TOKENS_CLAIM && (
+          <IfoNotTokens
+            participateText={t(
+              'Participate in our next IFO. and remember to lock your CAKE to increase your allocation!',
+            )}
+          />
+        )}
         {cardStatus.status === VestingStatus.HAS_TOKENS_CLAIM && (
           <TokenInfoContainer>
             {data.map((ifo, index) => (
-              <TokenInfo key={ifo.ifo.id} index={index} data={ifo} fetchUserVestingData={handleFetchUserVesting} />
+              <TokenInfo
+                key={ifo.ifo.id}
+                index={index}
+                data={ifo}
+                fetchUserVestingData={handleFetchUserVesting}
+                ifoBasicSaleType={ifoBasicSaleType}
+              />
             ))}
           </TokenInfoContainer>
         )}

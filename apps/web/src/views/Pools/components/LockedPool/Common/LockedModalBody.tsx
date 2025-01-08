@@ -1,25 +1,30 @@
-import { useMemo, useState } from 'react'
-import dynamic from 'next/dynamic'
-import { Button, AutoRenewIcon, Box, Flex, Message, MessageText, Text } from '@pancakeswap/uikit'
-import _noop from 'lodash/noop'
 import { useTranslation } from '@pancakeswap/localization'
-import { MAX_LOCK_DURATION } from 'config/constants/pools'
-import { getBalanceAmount } from '@pancakeswap/utils/formatBalance'
+import { MAX_LOCK_DURATION } from '@pancakeswap/pools'
+import { AutoRenewIcon, Box, Button, Flex, Message, MessageText, Text } from '@pancakeswap/uikit'
+import { getBalanceAmount, getDecimalAmount } from '@pancakeswap/utils/formatBalance'
+import isUndefinedOrNull from '@pancakeswap/utils/isUndefinedOrNull'
+import BigNumber from 'bignumber.js'
+import _noop from 'lodash/noop'
+import dynamic from 'next/dynamic'
+import { useEffect, useMemo, useState } from 'react'
 import { useIfoCeiling } from 'state/pools/hooks'
+import { VaultKey } from 'state/types'
 
 import { LockedModalBodyPropsType, ModalValidator } from '../types'
 
-import Overview from './Overview'
-import LockDurationField from './LockDurationField'
-import useLockedPool from '../hooks/useLockedPool'
-import useAvgLockDuration from '../hooks/useAvgLockDuration'
 import { ENABLE_EXTEND_LOCK_AMOUNT } from '../../../helpers'
+import { useCheckVaultApprovalStatus, useVaultApprove } from '../../../hooks/useApprove'
+import useAvgLockDuration from '../hooks/useAvgLockDuration'
+import useLockedPool from '../hooks/useLockedPool'
+import LockDurationField from './LockDurationField'
+import Overview from './Overview'
 
 const ExtendEnable = dynamic(() => import('./ExtendEnable'), { ssr: false })
 
 const LockedModalBody: React.FC<React.PropsWithChildren<LockedModalBodyPropsType>> = ({
   stakingToken,
-  onDismiss,
+  stakingTokenPrice = 0,
+  onDismiss = () => {},
   lockedAmount,
   currentBalance,
   currentDuration,
@@ -29,16 +34,19 @@ const LockedModalBody: React.FC<React.PropsWithChildren<LockedModalBodyPropsType
   validator,
   customOverview,
   isRenew,
+  customLockWeekInSeconds,
 }) => {
   const { t } = useTranslation()
   const ceiling = useIfoCeiling()
   const { avgLockDurationsInSeconds } = useAvgLockDuration()
   const { usdValueStaked, duration, setDuration, pendingTx, handleConfirmClick } = useLockedPool({
     stakingToken,
+    stakingTokenPrice,
     onDismiss,
     lockedAmount,
+    // @ts-ignore
     prepConfirmArg,
-    defaultDuration: isRenew && avgLockDurationsInSeconds,
+    defaultDuration: customLockWeekInSeconds || isRenew ? avgLockDurationsInSeconds : undefined,
   })
   const [isMaxSelected, setIsMaxSelected] = useState(false)
 
@@ -48,7 +56,10 @@ const LockedModalBody: React.FC<React.PropsWithChildren<LockedModalBodyPropsType
           duration,
         })
       : {
-          isValidAmount: lockedAmount?.toNumber() > 0 && getBalanceAmount(currentBalance).gte(lockedAmount),
+          isValidAmount:
+            (lockedAmount?.toNumber() ?? 0) > 0 &&
+            Boolean(currentBalance?.toNumber()) &&
+            getBalanceAmount(currentBalance ?? new BigNumber(0)).gte(lockedAmount),
           isValidDuration: duration > 0 && duration <= MAX_LOCK_DURATION,
           isOverMax: duration > MAX_LOCK_DURATION,
         }
@@ -62,6 +73,38 @@ const LockedModalBody: React.FC<React.PropsWithChildren<LockedModalBodyPropsType
   const hasEnoughBalanceToExtend = useMemo(() => currentBalance?.gte(ENABLE_EXTEND_LOCK_AMOUNT), [currentBalance])
 
   const needsEnable = useMemo(() => cakeNeeded && !hasEnoughBalanceToExtend, [cakeNeeded, hasEnoughBalanceToExtend])
+
+  const { allowance, setLastUpdated } = useCheckVaultApprovalStatus(VaultKey.CakeVault)
+  const { handleApprove, pendingTx: approvePendingTx } = useVaultApprove(VaultKey.CakeVault, setLastUpdated)
+  const [showApproveWarning, setShowApproveWarning] = useState(false)
+
+  const needsApprove = useMemo(() => {
+    if (prepConfirmArg) {
+      const { finalLockedAmount } = prepConfirmArg({ duration })
+      if (!isUndefinedOrNull(finalLockedAmount)) {
+        return getDecimalAmount(new BigNumber(finalLockedAmount ?? 0)).gt(allowance)
+      }
+    }
+    const amount = getDecimalAmount(new BigNumber(lockedAmount))
+    return amount.gt(allowance)
+  }, [allowance, lockedAmount, prepConfirmArg, duration])
+
+  const [showEnableConfirmButtons, setShowEnableConfirmButtons] = useState(needsEnable)
+
+  useEffect(() => {
+    if (needsEnable) {
+      setShowEnableConfirmButtons(true)
+    }
+  }, [needsEnable])
+
+  useEffect(() => {
+    if (!showApproveWarning && prepConfirmArg) {
+      const { finalLockedAmount } = prepConfirmArg({ duration })
+      if (!isUndefinedOrNull(finalLockedAmount)) {
+        setShowApproveWarning(true)
+      }
+    }
+  }, [showApproveWarning, prepConfirmArg, duration])
 
   return (
     <>
@@ -86,7 +129,7 @@ const LockedModalBody: React.FC<React.PropsWithChildren<LockedModalBodyPropsType
           duration,
           isMaxSelected,
         })
-      ) : (
+      ) : customLockWeekInSeconds ? null : (
         <Overview
           isValidDuration={isValidDuration}
           openCalculator={_noop}
@@ -98,7 +141,7 @@ const LockedModalBody: React.FC<React.PropsWithChildren<LockedModalBodyPropsType
         />
       )}
 
-      {cakeNeeded ? (
+      {!needsApprove && cakeNeeded ? (
         hasEnoughBalanceToExtend ? (
           <Text fontSize="12px" mt="24px">
             {t('0.0001 CAKE will be spent to extend')}
@@ -110,9 +153,30 @@ const LockedModalBody: React.FC<React.PropsWithChildren<LockedModalBodyPropsType
         )
       ) : null}
 
-      <Flex mt="24px">
-        {needsEnable ? (
-          <ExtendEnable isValidAmount={isValidAmount} isValidDuration={isValidDuration} />
+      {showApproveWarning && needsApprove ? (
+        <Message variant="warning" mt="24px">
+          <MessageText maxWidth="200px">{t('Insufficient token allowance. Click "Enable" to approve.')}</MessageText>
+        </Message>
+      ) : null}
+
+      <Flex mt="24px" flexDirection="column">
+        {needsApprove ? (
+          <Button
+            width="100%"
+            isLoading={approvePendingTx}
+            endIcon={approvePendingTx ? <AutoRenewIcon spin color="currentColor" /> : null}
+            onClick={handleApprove}
+          >
+            {approvePendingTx ? t('Enabling') : t('Enable')}
+          </Button>
+        ) : showEnableConfirmButtons ? (
+          <ExtendEnable
+            hasEnoughCake={hasEnoughBalanceToExtend ?? false}
+            handleConfirmClick={handleConfirmClick}
+            pendingConfirmTx={pendingTx}
+            isValidAmount={isValidAmount}
+            isValidDuration={isValidDuration}
+          />
         ) : (
           <Button
             width="100%"

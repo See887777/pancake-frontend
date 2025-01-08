@@ -1,4 +1,4 @@
-import { useAccount, useAccountBalance, APTOS_COIN } from '@pancakeswap/awgmi'
+import { useAccount, useBalance, APTOS_COIN } from '@pancakeswap/awgmi'
 
 import { useTranslation } from '@pancakeswap/localization'
 import {
@@ -7,10 +7,11 @@ import {
   CopyAddress,
   Flex,
   InjectedModalProps,
-  LinkExternal,
+  ScanLink,
   Message,
   Skeleton,
   Text,
+  AptosIcon,
 } from '@pancakeswap/uikit'
 import { useAuth } from 'hooks/useAuth'
 
@@ -28,7 +29,7 @@ const WalletInfo: React.FC<WalletInfoProps> = ({ hasLowNativeBalance, onDismiss 
   const { account } = useAccount()
   const chainId = useActiveChainId()
   const native = useNativeCurrency()
-  const { data, isFetched } = useAccountBalance({ address: account?.address, coin: APTOS_COIN })
+  const { data, isFetched } = useBalance({ address: account?.address, coin: APTOS_COIN })
 
   const { logout } = useAuth()
 
@@ -69,11 +70,11 @@ const WalletInfo: React.FC<WalletInfoProps> = ({ hasLowNativeBalance, onDismiss 
       </Flex>
       {account && (
         <Flex alignItems="center" justifyContent="end" mb="24px">
-          <LinkExternal href={getBlockExploreLink(account.address, 'address', chainId)}>
+          <ScanLink icon={<AptosIcon />} href={getBlockExploreLink(account.address, 'address', chainId)}>
             {t('View on %site%', {
               site: t('Explorer'),
             })}
-          </LinkExternal>
+          </ScanLink>
         </Flex>
       )}
       <Button variant="secondary" width="100%" onClick={handleLogout}>

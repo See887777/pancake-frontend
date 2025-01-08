@@ -1,5 +1,5 @@
 import { ChainId, Coin } from '@pancakeswap/aptos-swap-sdk'
-import { APT } from 'config/coins'
+import { APT } from '../../coins'
 
 export const testnetTokens = {
   apt: APT[ChainId.TESTNET],
@@ -13,7 +13,7 @@ export const testnetTokens = {
   ),
   cake: new Coin(
     ChainId.TESTNET,
-    '0x9460030cb9e68bf33ced3e65d48e8c62610acd9f13c1a6197740733d8b72be60::pancake::Cake',
+    '0xe0e5ad285cbcdb873b2ee15bb6bcac73d9d763bcb58395e894255eeecf3992cf::pancake::Cake',
     8,
     'CAKE',
     'PancakeSwap Token',
@@ -33,6 +33,38 @@ export const testnetTokens = {
     8,
     'BNB',
     'BNB Token',
+    '',
+  ),
+  btc: new Coin(
+    ChainId.TESTNET,
+    '0x8c805723ebc0a7fc5b7d3e7b75d567918e806b3461cb9fa21941a9edc0220bf::devnet_coins::DevnetBTC',
+    8,
+    'BTC',
+    'BTC Token',
+    '',
+  ),
+  usdc: new Coin(
+    ChainId.TESTNET,
+    '0x8c805723ebc0a7fc5b7d3e7b75d567918e806b3461cb9fa21941a9edc0220bf::devnet_coins::DevnetUSDC',
+    8,
+    'USDC',
+    'USDC Token',
+    '',
+  ),
+  usdt: new Coin(
+    ChainId.TESTNET,
+    '0x8c805723ebc0a7fc5b7d3e7b75d567918e806b3461cb9fa21941a9edc0220bf::devnet_coins::DevnetUSDT',
+    8,
+    'USDT',
+    'USDT Token',
+    '',
+  ),
+  dai: new Coin(
+    ChainId.TESTNET,
+    '0x8c805723ebc0a7fc5b7d3e7b75d567918e806b3461cb9fa21941a9edc0220bf::devnet_coins::DevnetDAI',
+    8,
+    'DAI',
+    'DAI Token',
     '',
   ),
 }

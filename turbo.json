@@ -1,20 +1,35 @@
 {
   "$schema": "https://turborepo.org/schema.json",
-  "pipeline": {
+  "globalDependencies": ["**/.env.*local"],
+  "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**"]
+      "env": ["RISK_APP_SECRET", "SERVER_NODE_REAL_API_ETH", "SERVER_NODE_REAL_API_GOERLI"],
+      "outputs": ["dist/**", ".next/**/*", "!.next/cache/**", "!.vercel/**/*"]
     },
     "test": {
       "outputs": ["coverage/**"],
       "dependsOn": ["^build"]
     },
+    "test:config": {
+      "dependsOn": ["^build"]
+    },
+    "build:storybook": {
+      "dependsOn": ["^build"],
+      "outputs": ["storybook-static/**"]
+    },
+    "build:uikit": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
     "lint": {
+      "dependsOn": ["@pancakeswap/next-config#build"],
       "outputs": []
     },
     "dev": {
+      "dependsOn": ["@pancakeswap/next-config#build"],
       "cache": false,
-      "dependsOn": ["^build"]
+      "persistent": true
     },
     "start": {
       "cache": false
@@ -28,9 +43,6 @@
     },
     "clean": {
       "cache": false
-    },
-    "postinstall": {
-      "outputs": []
     }
   }
 }

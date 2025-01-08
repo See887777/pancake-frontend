@@ -1,9 +1,9 @@
-import { Card, CardBody, Flex, Heading, ProfileAvatar, NextLinkFromReactRouter } from '@pancakeswap/uikit'
+import { Card, CardBody, Flex, Heading, ProfileAvatar } from '@pancakeswap/uikit'
+import { NextLinkFromReactRouter } from '@pancakeswap/widgets-internal'
 
-import Image from 'next/image'
-import styled, { css } from 'styled-components'
+import { css, styled } from 'styled-components'
 
-interface HotCollectionCardProps {
+interface CollectionCardProps {
   bgSrc: string
   avatarSrc?: string
   collectionName: string
@@ -16,9 +16,10 @@ export const CollectionAvatar = styled(ProfileAvatar)`
   position: absolute;
   top: -32px;
   border: 4px white solid;
+  background-color: ${({ theme }) => theme.colors.background};
 `
 
-const StyledHotCollectionCard = styled(Card)<{ disabled?: boolean }>`
+const StyledCollectionCard = styled(Card)<{ disabled?: boolean }>`
   border-radius: 8px;
   border-bottom-left-radius: 56px;
   transition: opacity 200ms;
@@ -41,11 +42,17 @@ const StyledHotCollectionCard = styled(Card)<{ disabled?: boolean }>`
   }
 `
 
-const StyledImage = styled(Image)`
+const StyledImage = styled(Flex)<{ backgroundImageUrl: string }>`
+  width: 100%;
+  height: 125px;
   border-radius: 4px;
+  background-size: cover;
+  background-repeat: non-repeat;
+  background-position: center;
+  background-image: ${({ backgroundImageUrl }) => `url('${backgroundImageUrl}')`};
 `
 
-const CollectionCard: React.FC<React.PropsWithChildren<HotCollectionCardProps>> = ({
+const CollectionCard: React.FC<React.PropsWithChildren<CollectionCardProps>> = ({
   bgSrc,
   avatarSrc,
   collectionName,
@@ -55,7 +62,7 @@ const CollectionCard: React.FC<React.PropsWithChildren<HotCollectionCardProps>> 
 }) => {
   const renderBody = () => (
     <CardBody p="8px">
-      <StyledImage src={bgSrc} height={125} width={375} />
+      <StyledImage backgroundImageUrl={bgSrc} />
       <Flex
         position="relative"
         height="65px"
@@ -74,13 +81,13 @@ const CollectionCard: React.FC<React.PropsWithChildren<HotCollectionCardProps>> 
   )
 
   return (
-    <StyledHotCollectionCard disabled={disabled} data-test="hot-collection-card">
+    <StyledCollectionCard disabled={disabled} data-test="hot-collection-card">
       {url ? (
         <NextLinkFromReactRouter to={url}>{renderBody()}</NextLinkFromReactRouter>
       ) : (
         <div style={{ cursor: 'default' }}>{renderBody()}</div>
       )}
-    </StyledHotCollectionCard>
+    </StyledCollectionCard>
   )
 }
 
