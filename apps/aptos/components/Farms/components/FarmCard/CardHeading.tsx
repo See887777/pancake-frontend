@@ -1,9 +1,12 @@
-import styled from 'styled-components'
-import { Tag, Flex, Heading, Box, Skeleton, Farm as FarmUI } from '@pancakeswap/uikit'
 import { Token } from '@pancakeswap/aptos-swap-sdk'
+import { Box, Flex, Heading, Skeleton } from '@pancakeswap/uikit'
+import { FarmWidget } from '@pancakeswap/widgets-internal'
+import { PoolEarnAptTooltips } from 'components/Farms/components/FarmTable/PoolEarnAptTooltips'
+import { useIsAptRewardFarm } from 'components/Farms/hooks/useIsAptRewardFarm'
 import { TokenPairImage } from 'components/TokenImage'
+import { styled } from 'styled-components'
 
-const { FarmAuctionTag, CoreTag } = FarmUI.Tags
+const { FarmAuctionTag, CoreTag } = FarmWidget.Tags
 
 export interface ExpandableSectionProps {
   lpLabel?: string
@@ -11,6 +14,9 @@ export interface ExpandableSectionProps {
   isCommunityFarm?: boolean
   token: Token
   quoteToken: Token
+  farmCakePerSecond?: string
+  totalMultipliers?: string
+  lpAddress?: string
 }
 
 const Wrapper = styled(Flex)`
@@ -19,18 +25,16 @@ const Wrapper = styled(Flex)`
   }
 `
 
-const MultiplierTag = styled(Tag)`
-  margin-left: 4px;
-`
-
 const CardHeading: React.FC<React.PropsWithChildren<ExpandableSectionProps>> = ({
   lpLabel,
   multiplier,
   isCommunityFarm,
   token,
   quoteToken,
+  lpAddress,
 }) => {
   const isReady = multiplier !== undefined
+  const showPoolEarnAptTooltip = useIsAptRewardFarm(lpAddress)
 
   return (
     <Wrapper justifyContent="space-between" alignItems="center" mb="12px">
@@ -40,14 +44,18 @@ const CardHeading: React.FC<React.PropsWithChildren<ExpandableSectionProps>> = (
         <Skeleton mr="8px" width={63} height={63} variant="circle" />
       )}
       <Flex flexDirection="column" alignItems="flex-end">
-        {isReady ? <Heading mb="4px">{lpLabel?.split(' ')[0]}</Heading> : <Skeleton mb="4px" width={60} height={18} />}
+        {isReady ? (
+          <Flex mb="4px">
+            <Heading>{lpLabel?.split(' ')[0]}</Heading>
+            {showPoolEarnAptTooltip && (
+              <PoolEarnAptTooltips lpLabel={lpLabel ?? ''} token={token} quoteToken={quoteToken} />
+            )}
+          </Flex>
+        ) : (
+          <Skeleton mb="4px" width={60} height={18} />
+        )}
         <Flex justifyContent="center">
           {isReady ? <Box>{isCommunityFarm ? <FarmAuctionTag /> : <CoreTag />}</Box> : null}
-          {isReady ? (
-            <MultiplierTag variant="secondary">{multiplier}</MultiplierTag>
-          ) : (
-            <Skeleton ml="4px" width={42} height={28} />
-          )}
         </Flex>
       </Flex>
     </Wrapper>

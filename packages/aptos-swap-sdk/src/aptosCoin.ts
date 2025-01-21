@@ -1,5 +1,5 @@
 import { NativeCurrency, SerializedToken } from '@pancakeswap/swap-sdk-core'
-import { TxnBuilderTypes } from 'aptos'
+import { TypeTagStruct, parseTypeTag } from '@aptos-labs/ts-sdk'
 import { Coin } from './coin'
 import { Currency } from './currency'
 
@@ -8,7 +8,7 @@ const APTOS_COIN = '0x1::aptos_coin::AptosCoin' as const
 export class AptosCoin extends NativeCurrency {
   address: typeof APTOS_COIN = APTOS_COIN
 
-  structTag: TxnBuilderTypes.StructTag = TxnBuilderTypes.StructTag.fromString(APTOS_COIN)
+  structTag: TypeTagStruct = parseTypeTag(APTOS_COIN) as TypeTagStruct
 
   projectLink = 'https://aptoslabs.com/'
 
@@ -37,9 +37,8 @@ export class AptosCoin extends NativeCurrency {
     return new Coin(this.chainId, this.address, this.decimals, this.symbol, this.name, this.projectLink)
   }
 
-  // eslint-disable-next-line class-methods-use-this
-  public sortsBefore(_other: Currency): boolean {
-    return true
+  public sortsBefore(other: Currency): boolean {
+    return this.address.toLowerCase() < other.address.toLowerCase()
   }
 
   public get serialize(): SerializedToken {

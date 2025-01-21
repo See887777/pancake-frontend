@@ -1,61 +1,85 @@
-import { useAccount } from 'wagmi'
-import BigNumber from 'bignumber.js'
+import { ChainId } from '@pancakeswap/chains'
 import { CAKE } from '@pancakeswap/tokens'
-import { FAST_INTERVAL } from 'config/constants'
-import { BigNumber as EthersBigNumber } from '@ethersproject/bignumber'
-import { Zero } from '@ethersproject/constants'
-import { ChainId } from '@pancakeswap/sdk'
-import { useMemo } from 'react'
-import useSWR from 'swr'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { bscRpcProvider } from 'utils/providers'
-import { useWeb3React } from '@pancakeswap/wagmi'
-import { useTokenContract } from './useContract'
-import { useSWRContract } from './useSWRContract'
+import { useBalance, useReadContract } from '@pancakeswap/wagmi'
+import BigNumber from 'bignumber.js'
+import { useMemo } from 'react'
+import { getVeCakeAddress } from 'utils/addressHelpers'
+import { Address, erc20Abi } from 'viem'
+import { useAccount } from 'wagmi'
+import { useActiveChainId } from './useActiveChainId'
 
-const useTokenBalance = (tokenAddress: string, forceBSC?: boolean) => {
+const useTokenBalance = (tokenAddress: Address, forceBSC?: boolean, targetChainId?: ChainId) => {
+  return useTokenBalanceByChain(tokenAddress, forceBSC ? ChainId.BSC : targetChainId)
+}
+
+export const useTokenBalanceByChain = (tokenAddress: Address, chainIdOverride?: ChainId) => {
   const { address: account } = useAccount()
+  const { chainId } = useActiveChainId()
 
-  const contract = useTokenContract(tokenAddress, false)
-
-  const key = useMemo(
-    () =>
-      account
-        ? {
-            contract: forceBSC ? contract.connect(bscRpcProvider) : contract,
-            methodName: 'balanceOf',
-            params: [account],
-          }
-        : null,
-    [account, contract, forceBSC],
-  )
-
-  const { data, status, ...rest } = useSWRContract(key as any, {
-    refreshInterval: FAST_INTERVAL,
+  const { data, status, refetch, ...rest } = useReadContract({
+    chainId: chainIdOverride || chainId,
+    abi: erc20Abi,
+    address: tokenAddress,
+    functionName: 'balanceOf',
+    args: [account || '0x'],
+    query: {
+      enabled: !!account,
+    },
+    watch: true,
   })
 
   return {
     ...rest,
+    refetch,
     fetchStatus: status,
-    balance: data ? new BigNumber(data.toString()) : BIG_ZERO,
+    balance: useMemo(() => (typeof data !== 'undefined' ? new BigNumber(data.toString()) : BIG_ZERO), [data]),
   }
 }
 
 export const useGetBnbBalance = () => {
   const { address: account } = useAccount()
-  const { status, data, mutate } = useSWR([account, 'bnbBalance'], async () => {
-    return bscRpcProvider.getBalance(account)
+
+  const { status, refetch, data } = useBalance({
+    chainId: ChainId.BSC,
+    address: account,
+    query: {
+      enabled: !!account,
+    },
+    watch: true,
   })
 
-  return { balance: data || Zero, fetchStatus: status, refresh: mutate }
+  return { balance: data?.value ? BigInt(data.value) : 0n, fetchStatus: status, refresh: refetch }
 }
 
-export const useGetCakeBalance = () => {
-  const { chainId } = useWeb3React()
-  const { balance, fetchStatus } = useTokenBalance(CAKE[chainId]?.address || CAKE[ChainId.BSC]?.address, true)
+export const useGetNativeTokenBalance = () => {
+  const { address: account } = useAccount()
+  const { chainId } = useActiveChainId()
 
-  // TODO: Remove ethers conversion once useTokenBalance is converted to ethers.BigNumber
-  return { balance: EthersBigNumber.from(balance.toString()), fetchStatus }
+  const { status, refetch, data } = useBalance({
+    chainId,
+    address: account,
+    query: {
+      enabled: !!account,
+    },
+    watch: true,
+  })
+
+  return { balance: data?.value ? BigInt(data.value) : 0n, fetchStatus: status, refresh: refetch }
+}
+
+export const useBSCCakeBalance = () => {
+  const { balance, fetchStatus } = useTokenBalance(CAKE[ChainId.BSC]?.address, true)
+
+  return { balance: BigInt(balance.toString()), fetchStatus }
+}
+
+// veCake only deploy on bsc/bscTestnet
+export const useVeCakeBalance = (targetChainId?: ChainId) => {
+  const { chainId } = useActiveChainId()
+  const { balance, fetchStatus } = useTokenBalance(getVeCakeAddress(targetChainId ?? chainId), false, targetChainId)
+
+  return { balance, fetchStatus }
 }
 
 export default useTokenBalance

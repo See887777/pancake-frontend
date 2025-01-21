@@ -1,15 +1,20 @@
+import { TransactionResponse } from '@pancakeswap/awgmi/core'
+import type { DeserializedFarmUserData } from '@pancakeswap/farms'
+import { FarmWithStakedValue } from '@pancakeswap/farms'
 import { useTranslation } from '@pancakeswap/localization'
-import { AddIcon, Button, Flex, IconButton, MinusIcon, useModal, useToast, Farm as FarmUI } from '@pancakeswap/uikit'
-import styled from 'styled-components'
-import { useRouter } from 'next/router'
+import { AddIcon, Button, Flex, IconButton, MinusIcon, useModal, useToast } from '@pancakeswap/uikit'
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import { FarmWidget } from '@pancakeswap/widgets-internal'
+import BigNumber from 'bignumber.js'
+import { FARM_DEFAULT_DECIMALS } from 'components/Farms/constants'
+import { useCheckIsUserIpPass } from 'components/Farms/hooks/useCheckIsUserIpPass'
 import { ToastDescriptionWithTx } from 'components/Toast'
 import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { useCakePriceAsBigNumber } from 'hooks/useStablePrice'
-import type { DeserializedFarmUserData } from '@pancakeswap/farms'
-import { TransactionResponse } from '@pancakeswap/awgmi/core'
 import useCatchTxError from 'hooks/useCatchTxError'
-import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { FarmWithStakedValue } from '../types'
+import { usePriceCakeUsdc } from 'hooks/useStablePrice'
+import { useRouter } from 'next/router'
+import { useMemo } from 'react'
+import { styled } from 'styled-components'
 
 const IconButtonWrapper = styled.div`
   display: flex;
@@ -22,6 +27,8 @@ interface FarmCardActionsProps extends FarmWithStakedValue {
   lpLabel?: string
   addLiquidityUrl?: string
   displayApr?: string
+  farmCakePerSecond?: string
+  totalMultipliers?: string
   onStake: (value: string) => Promise<TransactionResponse>
   onUnstake: (value: string) => Promise<TransactionResponse>
 }
@@ -41,15 +48,20 @@ const StakeAction: React.FC<React.PropsWithChildren<FarmCardActionsProps>> = ({
   tokenAmountTotal = BIG_ZERO,
   quoteTokenAmountTotal = BIG_ZERO,
   userData,
+  dualTokenRewardApr,
+  farmCakePerSecond,
+  totalMultipliers,
+  lpRewardsApr,
   onStake,
   onUnstake,
 }) => {
   const { t } = useTranslation()
   const { account } = useActiveWeb3React()
+  const isUserIpPass = useCheckIsUserIpPass()
   const { toastSuccess } = useToast()
   const { fetchWithCatchTxError } = useCatchTxError()
   const { stakedBalance, tokenBalance } = (userData as DeserializedFarmUserData) || {}
-  const cakePrice = useCakePriceAsBigNumber()
+  const cakePrice = usePriceCakeUsdc()
   const router = useRouter()
 
   const handleStake = async (amount: string) => {
@@ -76,8 +88,17 @@ const StakeAction: React.FC<React.PropsWithChildren<FarmCardActionsProps>> = ({
     }
   }
 
+  const combineApr = useMemo(() => {
+    let total = new BigNumber(apr ?? 0).plus(lpRewardsApr ?? 0)
+    if (dualTokenRewardApr) {
+      total = new BigNumber(apr ?? 0).plus(lpRewardsApr ?? 0).plus(dualTokenRewardApr)
+    }
+
+    return total.toNumber()
+  }, [apr, dualTokenRewardApr, lpRewardsApr])
+
   const [onPresentDeposit] = useModal(
-    <FarmUI.DepositModal
+    <FarmWidget.DepositModal
       account={account || ''}
       pid={pid}
       lpTotalSupply={lpTotalSupply}
@@ -88,20 +109,40 @@ const StakeAction: React.FC<React.PropsWithChildren<FarmCardActionsProps>> = ({
       multiplier={multiplier}
       lpPrice={lpTokenPrice}
       lpLabel={lpLabel}
-      apr={apr}
+      apr={combineApr}
+      lpRewardsApr={lpRewardsApr}
       displayApr={displayApr}
       addLiquidityUrl={addLiquidityUrl}
       cakePrice={cakePrice}
+      decimals={FARM_DEFAULT_DECIMALS}
+      dualTokenRewardApr={dualTokenRewardApr}
+      farmCakePerSecond={farmCakePerSecond}
+      totalMultipliers={totalMultipliers}
+      rewardCakePerSecond
+      showTopMessageText={
+        isUserIpPass
+          ? null
+          : t(
+              'The CAKE and APT Farm rewards for this pool will not be applicable to or claimable by U.S.-based and VPN users.',
+            )
+      }
     />,
   )
 
   const [onPresentWithdraw] = useModal(
-    <FarmUI.WithdrawModal max={stakedBalance} onConfirm={handleUnstake} tokenName={lpSymbol} decimals={8} />,
+    <FarmWidget.WithdrawModal
+      max={stakedBalance}
+      lpPrice={lpTokenPrice}
+      onConfirm={handleUnstake}
+      tokenName={lpSymbol}
+      decimals={FARM_DEFAULT_DECIMALS}
+    />,
   )
 
   const renderStakingButtons = () => {
     return stakedBalance.eq(0) ? (
       <Button
+        mt="16px"
         onClick={onPresentDeposit}
         disabled={['history', 'archived'].some((item) => router.pathname.includes(item))}
       >
@@ -124,8 +165,13 @@ const StakeAction: React.FC<React.PropsWithChildren<FarmCardActionsProps>> = ({
   }
 
   return (
-    <Flex justifyContent="space-between" alignItems="center">
-      <FarmUI.StakedLP
+    <Flex
+      justifyContent="space-between"
+      flexDirection={stakedBalance.eq(0) ? 'column' : 'row'}
+      alignItems={stakedBalance.eq(0) ? 'none' : 'center'}
+    >
+      <FarmWidget.StakedLP
+        decimals={FARM_DEFAULT_DECIMALS}
         stakedBalance={stakedBalance}
         quoteTokenSymbol={quoteToken.symbol}
         tokenSymbol={token.symbol}

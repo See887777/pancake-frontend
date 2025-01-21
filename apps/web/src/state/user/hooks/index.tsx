@@ -1,132 +1,48 @@
-import { ChainId, Pair, ERC20Token } from '@pancakeswap/sdk'
+import { ChainId } from '@pancakeswap/chains'
+import { getLegacyFarmConfig } from '@pancakeswap/farms'
+import { ERC20Token, Pair } from '@pancakeswap/sdk'
 import { deserializeToken } from '@pancakeswap/token-lists'
-import { differenceInDays } from 'date-fns'
+import { useFeeData } from '@pancakeswap/wagmi'
+import { useQuery } from '@tanstack/react-query'
+import { BASES_TO_TRACK_LIQUIDITY_FOR, PINNED_PAIRS } from 'config/constants/exchange'
+import { useOfficialsAndUserAddedTokens } from 'hooks/Tokens'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useFeatureFlagEvaluation } from 'hooks/useDataDogRUM'
 import flatMap from 'lodash/flatMap'
-import { getFarmConfig } from '@pancakeswap/farms/constants'
 import { useCallback, useMemo } from 'react'
 import { useSelector } from 'react-redux'
-import { BASES_TO_TRACK_LIQUIDITY_FOR, PINNED_PAIRS } from 'config/constants/exchange'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import useSWRImmutable from 'swr/immutable'
-import { useFeeData } from 'wagmi'
-import { useOfficialsAndUserAddedTokens } from 'hooks/Tokens'
-import { useWeb3LibraryContext } from '@pancakeswap/wagmi'
-import useSWR from 'swr'
-import { useActiveChainId } from 'hooks/useActiveChainId'
-import { AppState, useAppDispatch } from '../../index'
+import { AppState, useAppDispatch } from 'state'
+import { safeGetAddress } from 'utils'
+import { Hex, hexToBigInt } from 'viem'
+import { useWalletClient } from 'wagmi'
+import { GAS_PRICE_GWEI } from '../../types'
 import {
+  FarmStakedOnly,
+  SerializedPair,
+  ViewMode,
   addSerializedPair,
   addSerializedToken,
-  FarmStakedOnly,
-  muteAudio,
-  removeSerializedToken,
-  SerializedPair,
-  unmuteAudio,
-  updateUserDeadline,
-  updateUserExpertMode,
-  updateUserFarmStakedOnly,
-  updateUserSingleHopOnly,
-  updateUserSlippageTolerance,
-  updateGasPrice,
-  addWatchlistToken,
   addWatchlistPool,
+  addWatchlistToken,
+  removeSerializedToken,
+  setSubgraphHealthIndicatorDisplayed,
+  updateGasPrice,
+  updateUserFarmStakedOnly,
+  updateUserFarmsViewMode,
+  updateUserLimitOrderAcceptedWarning,
   updateUserPoolStakedOnly,
   updateUserPoolsViewMode,
-  ViewMode,
-  updateUserFarmsViewMode,
-  updateUserPredictionChartDisclaimerShow,
-  updateUserPredictionChainlinkChartDisclaimerShow,
   updateUserPredictionAcceptedRisk,
+  updateUserPredictionChainlinkChartDisclaimerShow,
+  updateUserPredictionChartDisclaimerShow,
   updateUserUsernameVisibility,
-  updateUserExpertModeAcknowledgementShow,
-  hidePhishingWarningBanner,
-  setIsExchangeChartDisplayed,
-  ChartViewMode,
-  setChartViewMode,
-  setSubgraphHealthIndicatorDisplayed,
-  updateUserLimitOrderAcceptedWarning,
-  setZapDisabled,
 } from '../actions'
-import { GAS_PRICE_GWEI } from '../../types'
-
-export function useAudioModeManager(): [boolean, () => void] {
-  const dispatch = useAppDispatch()
-  const audioPlay = useSelector<AppState, AppState['user']['audioPlay']>((state) => state.user.audioPlay)
-
-  const toggleSetAudioMode = useCallback(() => {
-    if (audioPlay) {
-      dispatch(muteAudio())
-    } else {
-      dispatch(unmuteAudio())
-    }
-  }, [audioPlay, dispatch])
-
-  return [audioPlay, toggleSetAudioMode]
-}
-
-export function usePhishingBannerManager(): [boolean, () => void] {
-  const dispatch = useAppDispatch()
-  const hideTimestampPhishingWarningBanner = useSelector<
-    AppState,
-    AppState['user']['hideTimestampPhishingWarningBanner']
-  >((state) => state.user.hideTimestampPhishingWarningBanner)
-  const now = Date.now()
-  const showPhishingWarningBanner = hideTimestampPhishingWarningBanner
-    ? differenceInDays(now, hideTimestampPhishingWarningBanner) >= 1
-    : true
-  const hideBanner = useCallback(() => {
-    dispatch(hidePhishingWarningBanner())
-  }, [dispatch])
-
-  return [showPhishingWarningBanner, hideBanner]
-}
+import { useUserChart } from './useUserChart'
 
 // Get user preference for exchange price chart
 // For mobile layout chart is hidden by default
-export function useExchangeChartManager(isMobile: boolean): [boolean, (isDisplayed: boolean) => void] {
-  const dispatch = useAppDispatch()
-  const isChartDisplayed = useSelector<AppState, AppState['user']['isExchangeChartDisplayed']>(
-    (state) => state.user.isExchangeChartDisplayed,
-  )
-
-  const setUserChartPreference = useCallback(
-    (isDisplayed: boolean) => {
-      dispatch(setIsExchangeChartDisplayed(isDisplayed))
-    },
-    [dispatch],
-  )
-
-  return [isMobile ? false : isChartDisplayed, setUserChartPreference]
-}
-
-export function useExchangeChartViewManager() {
-  const dispatch = useAppDispatch()
-  const chartViewMode = useSelector<AppState, AppState['user']['userChartViewMode']>(
-    (state) => state.user.userChartViewMode,
-  )
-
-  const setUserChartViewPreference = useCallback(
-    (view: ChartViewMode) => {
-      dispatch(setChartViewMode(view))
-    },
-    [dispatch],
-  )
-
-  return [chartViewMode, setUserChartViewPreference] as const
-}
-
-export function useZapModeManager() {
-  const dispatch = useAppDispatch()
-  const zapEnabled = useSelector<AppState, AppState['user']['userZapDisabled']>((state) => !state.user.userZapDisabled)
-
-  const setZapEnable = useCallback(
-    (enable: boolean) => {
-      dispatch(setZapDisabled(!enable))
-    },
-    [dispatch],
-  )
-
-  return [zapEnabled, setZapEnable] as const
+export function useExchangeChartManager(isMobile: boolean) {
+  return useUserChart(isMobile)
 }
 
 export function useSubgraphHealthIndicatorManager() {
@@ -146,55 +62,7 @@ export function useSubgraphHealthIndicatorManager() {
   return [isSubgraphHealthIndicatorDisplayed, setSubgraphHealthIndicatorDisplayedPreference] as const
 }
 
-export function useIsExpertMode(): boolean {
-  return useSelector<AppState, AppState['user']['userExpertMode']>((state) => state.user.userExpertMode)
-}
-
-export function useExpertModeManager(): [boolean, () => void] {
-  const dispatch = useAppDispatch()
-  const expertMode = useIsExpertMode()
-
-  const toggleSetExpertMode = useCallback(() => {
-    dispatch(updateUserExpertMode({ userExpertMode: !expertMode }))
-  }, [expertMode, dispatch])
-
-  return [expertMode, toggleSetExpertMode]
-}
-
-export function useUserSingleHopOnly(): [boolean, (newSingleHopOnly: boolean) => void] {
-  const dispatch = useAppDispatch()
-
-  const singleHopOnly = useSelector<AppState, AppState['user']['userSingleHopOnly']>(
-    (state) => state.user.userSingleHopOnly,
-  )
-
-  const setSingleHopOnly = useCallback(
-    (newSingleHopOnly: boolean) => {
-      dispatch(updateUserSingleHopOnly({ userSingleHopOnly: newSingleHopOnly }))
-    },
-    [dispatch],
-  )
-
-  return [singleHopOnly, setSingleHopOnly]
-}
-
-export function useUserSlippageTolerance(): [number, (slippage: number) => void] {
-  const dispatch = useAppDispatch()
-  const userSlippageTolerance = useSelector<AppState, AppState['user']['userSlippageTolerance']>((state) => {
-    return state.user.userSlippageTolerance
-  })
-
-  const setUserSlippageTolerance = useCallback(
-    (slippage: number) => {
-      dispatch(updateUserSlippageTolerance({ userSlippageTolerance: slippage }))
-    },
-    [dispatch],
-  )
-
-  return [userSlippageTolerance, setUserSlippageTolerance]
-}
-
-export function useUserFarmStakedOnly(isActive: boolean): [boolean, (stakedOnly: boolean) => void] {
+export function useUserFarmStakedOnly(isActive: boolean): [boolean, (stakedOnly: boolean) => void, () => void] {
   const dispatch = useAppDispatch()
   const userFarmStakedOnly = useSelector<AppState, AppState['user']['userFarmStakedOnly']>((state) => {
     return state.user.userFarmStakedOnly
@@ -208,10 +76,15 @@ export function useUserFarmStakedOnly(isActive: boolean): [boolean, (stakedOnly:
     [dispatch],
   )
 
-  return [
-    userFarmStakedOnly === FarmStakedOnly.ON_FINISHED ? !isActive : userFarmStakedOnly === FarmStakedOnly.TRUE,
-    setUserFarmStakedOnly,
-  ]
+  const booleanUserFarmStakedOnly =
+    userFarmStakedOnly === FarmStakedOnly.ON_FINISHED ? !isActive : userFarmStakedOnly === FarmStakedOnly.TRUE
+
+  const toggleUserFarmStakedOnly = useCallback(
+    () => setUserFarmStakedOnly(!booleanUserFarmStakedOnly),
+    [setUserFarmStakedOnly, booleanUserFarmStakedOnly],
+  )
+
+  return [booleanUserFarmStakedOnly, setUserFarmStakedOnly, toggleUserFarmStakedOnly]
 }
 
 export function useUserPoolStakedOnly(): [boolean, (stakedOnly: boolean) => void] {
@@ -251,6 +124,7 @@ export function useUserFarmsViewMode(): [ViewMode, (viewMode: ViewMode) => void]
   const userFarmsViewMode = useSelector<AppState, AppState['user']['userFarmsViewMode']>((state) => {
     return state.user.userFarmsViewMode
   })
+  useFeatureFlagEvaluation('farms-view-mode', userFarmsViewMode)
 
   const setUserFarmsViewMode = useCallback(
     (viewMode: ViewMode) => {
@@ -307,7 +181,11 @@ export function useUserPredictionChartDisclaimerShow(): [boolean, (showDisclaime
 
   const setPredictionUserChartDisclaimerShow = useCallback(
     (showDisclaimer: boolean) => {
-      dispatch(updateUserPredictionChartDisclaimerShow({ userShowDisclaimer: showDisclaimer }))
+      dispatch(
+        updateUserPredictionChartDisclaimerShow({
+          userShowDisclaimer: showDisclaimer,
+        }),
+      )
     },
     [dispatch],
   )
@@ -326,31 +204,16 @@ export function useUserPredictionChainlinkChartDisclaimerShow(): [boolean, (show
 
   const setPredictionUserChainlinkChartDisclaimerShow = useCallback(
     (showDisclaimer: boolean) => {
-      dispatch(updateUserPredictionChainlinkChartDisclaimerShow({ userShowDisclaimer: showDisclaimer }))
+      dispatch(
+        updateUserPredictionChainlinkChartDisclaimerShow({
+          userShowDisclaimer: showDisclaimer,
+        }),
+      )
     },
     [dispatch],
   )
 
   return [userPredictionChainlinkChartDisclaimerShow, setPredictionUserChainlinkChartDisclaimerShow]
-}
-
-export function useUserExpertModeAcknowledgementShow(): [boolean, (showAcknowledgement: boolean) => void] {
-  const dispatch = useAppDispatch()
-  const userExpertModeAcknowledgementShow = useSelector<
-    AppState,
-    AppState['user']['userExpertModeAcknowledgementShow']
-  >((state) => {
-    return state.user.userExpertModeAcknowledgementShow
-  })
-
-  const setUserExpertModeAcknowledgementShow = useCallback(
-    (showAcknowledgement: boolean) => {
-      dispatch(updateUserExpertModeAcknowledgementShow({ userExpertModeAcknowledgementShow: showAcknowledgement }))
-    },
-    [dispatch],
-  )
-
-  return [userExpertModeAcknowledgementShow, setUserExpertModeAcknowledgementShow]
 }
 
 export function useUserUsernameVisibility(): [boolean, (usernameVisibility: boolean) => void] {
@@ -361,28 +224,16 @@ export function useUserUsernameVisibility(): [boolean, (usernameVisibility: bool
 
   const setUserUsernameVisibility = useCallback(
     (usernameVisibility: boolean) => {
-      dispatch(updateUserUsernameVisibility({ userUsernameVisibility: usernameVisibility }))
+      dispatch(
+        updateUserUsernameVisibility({
+          userUsernameVisibility: usernameVisibility,
+        }),
+      )
     },
     [dispatch],
   )
 
   return [userUsernameVisibility, setUserUsernameVisibility]
-}
-
-export function useUserTransactionTTL(): [number, (slippage: number) => void] {
-  const dispatch = useAppDispatch()
-  const userDeadline = useSelector<AppState, AppState['user']['userDeadline']>((state) => {
-    return state.user.userDeadline
-  })
-
-  const setUserDeadline = useCallback(
-    (deadline: number) => {
-      dispatch(updateUserDeadline({ userDeadline: deadline }))
-    },
-    [dispatch],
-  )
-
-  return [userDeadline, setUserDeadline]
 }
 
 export function useAddUserToken(): (token: ERC20Token) => void {
@@ -405,40 +256,84 @@ export function useRemoveUserAddedToken(): (chainId: number, address: string) =>
   )
 }
 
-export function useGasPrice(chainIdOverride?: number): string {
-  const { chainId: chainId_, chain } = useActiveWeb3React()
-  const library = useWeb3LibraryContext()
+export function useFeeDataWithGasPrice(chainIdOverride?: number): {
+  gasPrice?: bigint
+  maxFeePerGas?: bigint
+  maxPriorityFeePerGas?: bigint
+} {
+  const { chainId: chainId_ } = useActiveChainId()
   const chainId = chainIdOverride ?? chainId_
-  const userGas = useSelector<AppState, AppState['user']['gasPrice']>((state) => state.user.gasPrice)
-  const { data: bscProviderGasPrice = GAS_PRICE_GWEI.default } = useSWR(
-    library &&
-      library.provider &&
-      chainId === ChainId.BSC &&
-      userGas === GAS_PRICE_GWEI.rpcDefault && ['bscProviderGasPrice', library.provider],
-    async () => {
-      const gasPrice = await library.getGasPrice()
-      return gasPrice.toString()
-    },
-    {
-      revalidateOnFocus: false,
-      revalidateOnReconnect: false,
-    },
-  )
+
+  const gasPrice = useGasPrice(chainId)
   const { data } = useFeeData({
     chainId,
-    enabled: chainId !== ChainId.BSC && chainId !== ChainId.BSC_TESTNET,
+    query: {
+      enabled: chainId !== ChainId.BSC && chainId !== ChainId.BSC_TESTNET,
+    },
     watch: true,
   })
+
+  if (gasPrice) {
+    return {
+      gasPrice,
+    }
+  }
+
+  return {
+    gasPrice: data?.gasPrice ?? undefined,
+    maxFeePerGas: data?.maxFeePerGas ?? undefined,
+    maxPriorityFeePerGas: data?.maxPriorityFeePerGas ?? undefined,
+  }
+}
+
+const DEFAULT_BSC_GAS_BIGINT = BigInt(GAS_PRICE_GWEI.default)
+const DEFAULT_BSC_TESTNET_GAS_BIGINT = BigInt(GAS_PRICE_GWEI.testnet)
+
+/**
+ * Note that this hook will only works well for BNB chain
+ */
+export function useDefaultGasPrice(chainIdOverride?: number, enabled = true): bigint | undefined {
+  const { chainId: chainId_, isWrongNetwork } = useActiveChainId()
+  const chainId = chainIdOverride ?? chainId_
+
+  const { data: signer } = useWalletClient({ chainId })
+
+  const queryEnabled = Boolean(!isWrongNetwork && signer && chainId === ChainId.BSC && enabled)
+
+  const { data: defaultGasPrice } = useQuery({
+    queryKey: ['bscProviderGasPrice', signer],
+    queryFn: async () => {
+      // @ts-ignore
+      const gasPrice = await signer?.request({
+        method: 'eth_gasPrice' as any,
+      })
+      return hexToBigInt(gasPrice as Hex)
+    },
+    enabled: queryEnabled,
+    placeholderData: queryEnabled ? DEFAULT_BSC_GAS_BIGINT : undefined,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  })
+
+  return defaultGasPrice
+}
+
+/**
+ * Note that this hook will only works well for BNB chain
+ */
+export function useGasPrice(chainIdOverride?: number): bigint | undefined {
+  const { chainId: chainId_ } = useActiveChainId()
+  const chainId = chainIdOverride ?? chainId_
+  const userGas = useSelector<AppState, AppState['user']['gasPrice']>((state) => state.user.gasPrice)
+  const bscProviderGasPrice = useDefaultGasPrice(chainIdOverride, userGas === GAS_PRICE_GWEI.rpcDefault)
   if (chainId === ChainId.BSC) {
-    return userGas === GAS_PRICE_GWEI.rpcDefault ? bscProviderGasPrice : userGas
+    return userGas === GAS_PRICE_GWEI.rpcDefault ? bscProviderGasPrice : BigInt(userGas ?? GAS_PRICE_GWEI.default)
   }
   if (chainId === ChainId.BSC_TESTNET) {
-    return GAS_PRICE_GWEI.testnet
+    return DEFAULT_BSC_TESTNET_GAS_BIGINT
   }
-  if (chain?.testnet) {
-    return data?.formatted?.maxPriorityFeePerGas
-  }
-  return data?.formatted?.gasPrice
+  return undefined
 }
 
 export function useGasPriceManager(): [string, (userGasPrice: string) => void] {
@@ -492,14 +387,23 @@ export function useTrackedTokenPairs(): [ERC20Token, ERC20Token][] {
   // pinned pairs
   const pinnedPairs = useMemo(() => (chainId ? PINNED_PAIRS[chainId] ?? [] : []), [chainId])
 
-  const { data: farmPairs = [] } = useSWRImmutable(chainId && ['track-farms-pairs', chainId], async () => {
-    const farms = await getFarmConfig(chainId)
+  const { data: farmPairs = [] } = useQuery({
+    queryKey: ['track-farms-pairs', chainId],
 
-    const fPairs: [ERC20Token, ERC20Token][] = farms
-      .filter((farm) => farm.pid !== 0)
-      .map((farm) => [deserializeToken(farm.token), deserializeToken(farm.quoteToken)])
+    queryFn: async () => {
+      const farms = await getLegacyFarmConfig(chainId)
 
-    return fPairs
+      const fPairs: [ERC20Token, ERC20Token][] | undefined = farms
+        ?.filter((farm) => farm.pid !== 0)
+        ?.map((farm) => [deserializeToken(farm.token), deserializeToken(farm.quoteToken)])
+
+      return fPairs
+    },
+
+    enabled: Boolean(chainId),
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
   })
 
   // pairs for every token against every base
@@ -513,13 +417,15 @@ export function useTrackedTokenPairs(): [ERC20Token, ERC20Token][] {
               // loop through all bases on the current chain
               (BASES_TO_TRACK_LIQUIDITY_FOR[chainId] ?? [])
                 // to construct pairs of the given token with each base
-                .map((base) => {
-                  if (base.address === token.address) {
+                .map((base: any) => {
+                  const baseAddress = safeGetAddress(base.address)
+
+                  if (baseAddress && baseAddress === tokenAddress) {
                     return null
                   }
                   return [base, token]
                 })
-                .filter((p): p is [ERC20Token, ERC20Token] => p !== null)
+                .filter((p: any): p is [ERC20Token, ERC20Token] => p !== null)
             )
           })
         : [],
@@ -546,9 +452,13 @@ export function useTrackedTokenPairs(): [ERC20Token, ERC20Token][] {
 
   return useMemo(() => {
     // dedupes pairs of tokens in the combined list
-    const keyed = combinedList.reduce<{ [key: string]: [ERC20Token, ERC20Token] }>((memo, [tokenA, tokenB]) => {
+    const keyed = combinedList.reduce<{
+      [key: string]: [ERC20Token, ERC20Token]
+    }>((memo, [tokenA, tokenB]) => {
       const sorted = tokenA.sortsBefore(tokenB)
-      const key = sorted ? `${tokenA.address}:${tokenB.address}` : `${tokenB.address}:${tokenA.address}`
+      const key = sorted
+        ? `${safeGetAddress(tokenA.address)}:${safeGetAddress(tokenB.address)}`
+        : `${safeGetAddress(tokenB.address)}:${safeGetAddress(tokenA.address)}`
       if (memo[key]) return memo
       memo[key] = sorted ? [tokenA, tokenB] : [tokenB, tokenA]
       return memo
@@ -558,26 +468,38 @@ export function useTrackedTokenPairs(): [ERC20Token, ERC20Token][] {
   }, [combinedList])
 }
 
+/**
+ * @deprecated
+ */
 export const useWatchlistTokens = (): [string[], (address: string) => void] => {
   const dispatch = useAppDispatch()
-  const savedTokens = useSelector((state: AppState) => state.user.watchlistTokens) ?? []
+  const savedTokensFromSelector = useSelector((state: AppState) => state.user.watchlistTokens)
   const updatedSavedTokens = useCallback(
     (address: string) => {
       dispatch(addWatchlistToken({ address }))
     },
     [dispatch],
   )
+  const savedTokens = useMemo(() => {
+    return savedTokensFromSelector ?? []
+  }, [savedTokensFromSelector])
   return [savedTokens, updatedSavedTokens]
 }
 
+/**
+ * @deprecated
+ */
 export const useWatchlistPools = (): [string[], (address: string) => void] => {
   const dispatch = useAppDispatch()
-  const savedPools = useSelector((state: AppState) => state.user.watchlistPools) ?? []
+  const savedPoolsFromSelector = useSelector((state: AppState) => state.user.watchlistPools)
   const updateSavedPools = useCallback(
     (address: string) => {
       dispatch(addWatchlistPool({ address }))
     },
     [dispatch],
   )
+  const savedPools = useMemo(() => {
+    return savedPoolsFromSelector ?? []
+  }, [savedPoolsFromSelector])
   return [savedPools, updateSavedPools]
 }

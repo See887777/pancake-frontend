@@ -3,19 +3,21 @@ import { Card, Flex, Heading } from '@pancakeswap/uikit'
 import Page from 'components/Layout/Page'
 import { useMemo } from 'react'
 import {
-  useAllPoolDataSWR,
-  useAllTokenDataSWR,
-  useProtocolChartDataSWR,
-  useProtocolDataSWR,
-  useProtocolTransactionsSWR,
+  useAllTokenDataQuery,
+  useProtocolChartDataTvlQuery,
+  useProtocolChartDataVolumeQuery,
+  useProtocolDataQuery,
+  useProtocolTransactionsQuery,
 } from 'state/info/hooks'
-import styled from 'styled-components'
+import { TokenData } from 'state/info/types'
+import { styled } from 'styled-components'
 import BarChart from 'views/Info/components/InfoCharts/BarChart'
 import LineChart from 'views/Info/components/InfoCharts/LineChart'
 import PoolTable from 'views/Info/components/InfoTables/PoolsTable'
 import TokenTable from 'views/Info/components/InfoTables/TokensTable'
 import TransactionTable from 'views/Info/components/InfoTables/TransactionsTable'
 import HoverableChart from '../components/InfoCharts/HoverableChart'
+import { useNonSpamPoolsData } from '../hooks/usePoolsData'
 
 export const ChartCardsContainer = styled(Flex)`
   justify-content: space-between;
@@ -30,7 +32,7 @@ export const ChartCardsContainer = styled(Flex)`
 
   ${({ theme }) => theme.mediaQueries.md} {
     flex-direction: row;
-  } ;
+  }
 `
 
 const Overview: React.FC<React.PropsWithChildren> = () => {
@@ -39,34 +41,29 @@ const Overview: React.FC<React.PropsWithChildren> = () => {
     currentLanguage: { locale },
   } = useTranslation()
 
-  const protocolData = useProtocolDataSWR()
-  const chartData = useProtocolChartDataSWR()
-  const transactions = useProtocolTransactionsSWR()
+  const protocolData = useProtocolDataQuery()
+  const volumeChartData = useProtocolChartDataVolumeQuery()
+  const tvlChartData = useProtocolChartDataTvlQuery()
+  const transactions = useProtocolTransactionsQuery()
 
   const currentDate = useMemo(
     () => new Date().toLocaleString(locale, { month: 'short', year: 'numeric', day: 'numeric' }),
     [locale],
   )
 
-  const allTokens = useAllTokenDataSWR()
+  const allTokens = useAllTokenDataQuery()
 
   const formattedTokens = useMemo(() => {
     return Object.values(allTokens)
       .map((token) => token.data)
-      .filter((token) => token.name !== 'unknown')
+      .filter<TokenData>((token): token is TokenData => token?.name !== 'unknown')
   }, [allTokens])
 
-  const allPoolData = useAllPoolDataSWR()
-  // const allPoolData = useAllPoolData()
-  const poolDatas = useMemo(() => {
-    return Object.values(allPoolData)
-      .map((pool) => pool.data)
-      .filter((pool) => pool.token1.name !== 'unknown' && pool.token0.name !== 'unknown')
-  }, [allPoolData])
+  const { poolsData } = useNonSpamPoolsData()
 
   const somePoolsAreLoading = useMemo(() => {
-    return poolDatas.some((pool) => !pool?.token0Price)
-  }, [poolDatas])
+    return poolsData.some((pool) => !pool?.token0Price)
+  }, [poolsData])
 
   return (
     <Page>
@@ -76,7 +73,8 @@ const Overview: React.FC<React.PropsWithChildren> = () => {
       <ChartCardsContainer>
         <Card>
           <HoverableChart
-            chartData={chartData}
+            volumeChartData={volumeChartData}
+            tvlChartData={tvlChartData}
             protocolData={protocolData}
             currentDate={currentDate}
             valueProperty="liquidityUSD"
@@ -86,7 +84,8 @@ const Overview: React.FC<React.PropsWithChildren> = () => {
         </Card>
         <Card>
           <HoverableChart
-            chartData={chartData}
+            volumeChartData={volumeChartData}
+            tvlChartData={tvlChartData}
             protocolData={protocolData}
             currentDate={currentDate}
             valueProperty="volumeUSD"
@@ -100,9 +99,9 @@ const Overview: React.FC<React.PropsWithChildren> = () => {
       </Heading>
       <TokenTable tokenDatas={formattedTokens} />
       <Heading scale="lg" mt="40px" mb="16px">
-        {t('Top Pools')}
+        {t('Top Pairs')}
       </Heading>
-      <PoolTable poolDatas={poolDatas} loading={somePoolsAreLoading} />
+      <PoolTable poolDatas={poolsData} loading={somePoolsAreLoading} />
       <Heading scale="lg" mt="40px" mb="16px">
         {t('Transactions')}
       </Heading>

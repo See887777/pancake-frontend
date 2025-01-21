@@ -1,4 +1,3 @@
-import { Contract } from '@ethersproject/contracts'
 import { useTranslation } from '@pancakeswap/localization'
 import {
   AutoRenewIcon,
@@ -12,15 +11,15 @@ import {
   useToast,
   useTooltip,
 } from '@pancakeswap/uikit'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
+import { getFullDisplayBalance } from '@pancakeswap/utils/formatBalance'
 import BigNumber from 'bignumber.js'
 import { ToastDescriptionWithTx } from 'components/Toast'
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
 import useCatchTxError from 'hooks/useCatchTxError'
-import { useBCakeProxyContract } from 'hooks/useContract'
+import { useBCakeProxyContract, useERC20 } from 'hooks/useContract'
 import { useEffect, useMemo, useState } from 'react'
-import styled from 'styled-components'
-import { getFullDisplayBalance } from '@pancakeswap/utils/formatBalance'
-import { useBCakeProxyContractAddress } from '../hooks/useBCakeProxyContractAddress'
+import { styled } from 'styled-components'
+import { useBCakeProxyContractAddress } from '../../../hooks/useBCakeProxyContractAddress'
 import useProxyStakedActions from './YieldBooster/hooks/useProxyStakedActions'
 
 export const StepperCircle = styled.div`
@@ -123,7 +122,7 @@ export const InfoIconBox = styled.div`
   align-items: center;
 `
 interface BCakeMigrateModalProps {
-  lpContract: Contract
+  lpContract: ReturnType<typeof useERC20>
   stakedBalance: BigNumber
   onUnStack: (amount: string, callback: () => void) => void
   onDismiss?: () => void
@@ -143,7 +142,7 @@ export const BCakeMigrateModal: React.FC<BCakeMigrateModalProps> = ({
   onUnStack,
   pid,
 }) => {
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const [activatedState, setActivatedState] = useState<Steps>(Steps.Unstake)
   const [isLoading, setIsLoading] = useState(false)
   const [isApproved, setIsApproved] = useState(false)
@@ -187,8 +186,8 @@ export const BCakeMigrateModal: React.FC<BCakeMigrateModalProps> = ({
   )
 
   useEffect(() => {
-    if (!bCakeProxy) return
-    bCakeProxy.lpApproved(lpContract.address).then((enabled) => {
+    if (!bCakeProxy || !lpContract) return
+    bCakeProxy.read.lpApproved([lpContract.address]).then((enabled) => {
       setIsApproved(enabled)
     })
   }, [lpContract, bCakeProxy])
@@ -202,11 +201,13 @@ export const BCakeMigrateModal: React.FC<BCakeMigrateModalProps> = ({
         setIsLoading(false)
       })
     } else if (activatedState === Steps.Enable) {
-      const receipt = await fetchWithCatchTxError(onApprove)
-      if (receipt?.status) {
-        toastSuccess(t('Contract Enabled'), <ToastDescriptionWithTx txHash={receipt.transactionHash} />)
-        setActivatedState(Steps.Stake)
-        onDone()
+      if (onApprove) {
+        const receipt = await fetchWithCatchTxError(onApprove)
+        if (receipt?.status) {
+          toastSuccess(t('Contract Enabled'), <ToastDescriptionWithTx txHash={receipt.transactionHash} />)
+          setActivatedState(Steps.Stake)
+          onDone()
+        }
       }
     } else {
       setIsLoading(true)

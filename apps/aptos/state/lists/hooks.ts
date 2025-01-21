@@ -1,7 +1,7 @@
 // most of the code is duplicated, let's refactor it later
 
 import { ChainId } from '@pancakeswap/aptos-swap-sdk'
-import { HexString } from 'aptos'
+import { HexString } from '@pancakeswap/awgmi'
 import { DEFAULT_LIST_OF_LISTS, OFFICIAL_LISTS, WARNING_LIST_URLS } from 'config/constants/lists'
 import { atom, useAtomValue } from 'jotai'
 import fromPairs from 'lodash/fromPairs'
@@ -50,7 +50,7 @@ const activeListUrlsAtom = atom((get) => {
 })
 
 const combineTokenMapsWithDefault = (lists: ListsState['byUrl'], urls: string[]) => {
-  const defaultTokenMap = listToTokenMap(DEFAULT_TOKEN_LIST)
+  const defaultTokenMap = listToTokenMap(DEFAULT_TOKEN_LIST as TokenList)
   if (!urls) return defaultTokenMap
   return combineMaps(combineTokenMaps(lists, urls), defaultTokenMap)
 }
@@ -58,8 +58,7 @@ const combineTokenMapsWithDefault = (lists: ListsState['byUrl'], urls: string[])
 const combineTokenMaps = (lists: ListsState['byUrl'], urls: string[]) => {
   if (!urls) return EMPTY_LIST
   return (
-    urls
-      .slice()
+    [...urls]
       // sort by priority so top priority goes last
       .sort(sortByListPriority)
       .reduce((allTokens, currentUrl) => {
@@ -124,7 +123,7 @@ export function listToTokenMap(list: TokenList): TokenAddressMap {
   if (result) return result
 
   const tokenMap: WrappedTokenInfo[] = uniqBy(
-    list.tokens.map((token) => ({ ...token, address: new HexString(token.address).toShortString() })),
+    list.tokens.map((token) => ({ ...token, address: new HexString(token.address).toShortString() as `0x${string}` })),
     (tokenInfo) => `${tokenInfo.chainId}#${tokenInfo.address}`,
   ).map((tokenInfo) => {
     return new WrappedTokenInfo(tokenInfo)

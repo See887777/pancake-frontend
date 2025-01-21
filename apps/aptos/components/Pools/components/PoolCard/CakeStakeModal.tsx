@@ -1,13 +1,12 @@
-import { Pool } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
 import { useCallback } from 'react'
 
-import { Coin, ChainId } from '@pancakeswap/aptos-swap-sdk'
-import useUnstakeFarms from 'components/Farms/hooks/useUnstakeFarms'
+import { ChainId, Coin } from '@pancakeswap/aptos-swap-sdk'
+import { useQueryClient } from '@tanstack/react-query'
 import useStakeFarms from 'components/Farms/hooks/useStakeFarms'
-import { useQueryClient } from '@pancakeswap/awgmi'
+import useUnstakeFarms from 'components/Farms/hooks/useUnstakeFarms'
 import cakePoolRelatedQueries from 'components/Pools/utils/cakePoolRelatedQueries'
 import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { CAKE_PID } from 'config/constants'
 import StakeModalContainer from './StakeModalContainer'
 
 const CakeStakeModal = ({ pool, ...rest }: Pool.StakeModalPropsType<Coin>) => {
@@ -15,8 +14,8 @@ const CakeStakeModal = ({ pool, ...rest }: Pool.StakeModalPropsType<Coin>) => {
   const queryClient = useQueryClient()
   const { account, networkName } = useActiveWeb3React()
 
-  const { onUnstake } = useUnstakeFarms(CAKE_PID, contractAddress[ChainId.TESTNET])
-  const { onStake } = useStakeFarms(CAKE_PID, contractAddress[ChainId.TESTNET])
+  const { onUnstake } = useUnstakeFarms(contractAddress[ChainId.TESTNET])
+  const { onStake } = useStakeFarms(contractAddress[ChainId.TESTNET])
 
   const onDone = useCallback(() => {
     queryClient.invalidateQueries({

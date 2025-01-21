@@ -1,10 +1,11 @@
-import { useState, ReactNode } from 'react'
-import styled from 'styled-components'
+import { useState, ReactNode, useCallback, useMemo } from 'react'
+import { styled } from 'styled-components'
 import { ExpandableLabel, Flex, FlexProps, Text } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
 
 interface FoldableTextProps extends Omit<FlexProps, 'title'> {
   title?: ReactNode
+  noBorder?: boolean
 }
 
 const Wrapper = styled(Flex)`
@@ -18,26 +19,35 @@ const StyledExpandableLabelWrapper = styled(Flex)`
   }
 `
 
-const StyledChildrenFlex = styled(Flex)<{ isExpanded?: boolean }>`
+const StyledChildrenFlex = styled(Flex)<{ isExpanded?: boolean; noBorder?: boolean }>`
   overflow: hidden;
   height: ${({ isExpanded }) => (isExpanded ? '100%' : '0px')};
   padding-bottom: ${({ isExpanded }) => (isExpanded ? '16px' : '0px')};
-  border-bottom: 1px solid ${({ theme }) => theme.colors.inputSecondary};
+  border-bottom: ${({ noBorder }) => (noBorder ? '' : `1px solid ${({ theme }) => theme.colors.inputSecondary}`)};
 `
 
-const FoldableText: React.FC<React.PropsWithChildren<FoldableTextProps>> = ({ title, children, ...props }) => {
+const FoldableText: React.FC<React.PropsWithChildren<FoldableTextProps>> = ({
+  title,
+  children,
+  noBorder,
+  ...props
+}) => {
   const { t } = useTranslation()
   const [isExpanded, setIsExpanded] = useState(false)
+  const handleClick = useCallback(() => setIsExpanded((s) => !s), [])
+  const expandableText = useMemo(() => {
+    return isExpanded ? t('Hide') : t('Details')
+  }, [isExpanded, t])
 
   return (
     <Flex {...props} flexDirection="column">
-      <Wrapper justifyContent="space-between" alignItems="center" pb="16px" onClick={() => setIsExpanded((s) => !s)}>
+      <Wrapper justifyContent="space-between" alignItems="center" pb="16px" onClick={handleClick}>
         <Text fontWeight="bold">{title}</Text>
         <StyledExpandableLabelWrapper>
-          <ExpandableLabel expanded={isExpanded}>{isExpanded ? t('Hide') : t('Details')}</ExpandableLabel>
+          <ExpandableLabel expanded={isExpanded}>{expandableText}</ExpandableLabel>
         </StyledExpandableLabelWrapper>
       </Wrapper>
-      <StyledChildrenFlex isExpanded={isExpanded} flexDirection="column">
+      <StyledChildrenFlex noBorder={noBorder} isExpanded={isExpanded} flexDirection="column">
         {children}
       </StyledChildrenFlex>
     </Flex>

@@ -1,6 +1,8 @@
 import { useCallback } from 'react'
 import { useTranslation } from '@pancakeswap/localization'
-import { Pool, useToast } from '@pancakeswap/uikit'
+import { useToast } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
+
 import { ToastDescriptionWithTx } from 'components/Toast'
 import useCatchTxError, { TxResponse } from 'hooks/useCatchTxError'
 
@@ -32,8 +34,7 @@ const CollectModalContainer = ({
         </ToastDescriptionWithTx>,
       )
 
-      if (onDone) onDone()
-
+      onDone?.()
       onDismiss?.()
     }
   }, [earningTokenSymbol, fetchWithCatchTxError, onDismiss, onDone, onReward, t, toastSuccess])

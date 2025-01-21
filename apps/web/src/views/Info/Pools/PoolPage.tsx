@@ -7,35 +7,45 @@ import {
   ButtonMenu,
   ButtonMenuItem,
   Card,
+  CopyButton,
   Flex,
   Heading,
   HelpIcon,
-  LinkExternal,
-  NextLinkFromReactRouter,
+  ScanLink,
   Spinner,
   Text,
   useMatchBreakpoints,
   useTooltip,
 } from '@pancakeswap/uikit'
+import { NextLinkFromReactRouter } from '@pancakeswap/widgets-internal'
+
+import { getLegacyFarmConfig } from '@pancakeswap/farms'
+import { useQuery } from '@tanstack/react-query'
+import BigNumber from 'bignumber.js'
 import Page from 'components/Layout/Page'
-import { useState } from 'react'
-import { multiChainId, multiChainScan } from 'state/info/constant'
+import { CHAIN_QUERY_NAME } from 'config/chains'
+import { useStableSwapAPR } from 'hooks/useStableSwapAPR'
+import { NextSeo } from 'next-seo'
+import { useMemo, useState } from 'react'
+import { ChainLinkSupportChains, checkIsStableSwap, multiChainId, multiChainScan } from 'state/info/constant'
 import {
-  useGetChainName,
+  useChainIdByQuery,
+  useChainNameByQuery,
   useMultiChainPath,
-  usePoolChartDataSWR,
-  usePoolDatasSWR,
-  usePoolTransactionsSWR,
+  usePoolChartTvlDataQuery,
+  usePoolChartVolumeDataQuery,
+  usePoolDataQuery,
+  usePoolTransactionsQuery,
+  useStableSwapPath,
 } from 'state/info/hooks'
-import { useWatchlistPools } from 'state/user/hooks'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { getBlockExploreLink } from 'utils'
 import { formatAmount } from 'utils/formatInfoNumbers'
+import { getTokenSymbolAlias } from 'utils/getTokenAlias'
 import { CurrencyLogo, DoubleCurrencyLogo } from 'views/Info/components/CurrencyLogo'
 import ChartCard from 'views/Info/components/InfoCharts/ChartCard'
 import TransactionTable from 'views/Info/components/InfoTables/TransactionsTable'
 import Percent from 'views/Info/components/Percent'
-import SaveIcon from 'views/Info/components/SaveIcon'
 
 const ContentLayout = styled.div`
   display: grid;
@@ -51,7 +61,7 @@ const ContentLayout = styled.div`
 const TokenButton = styled(Flex)`
   padding: 8px 0px;
   margin-right: 16px;
-  :hover {
+  &:hover {
     cursor: pointer;
     opacity: 0.6;
   }
@@ -77,38 +87,78 @@ const PoolPage: React.FC<React.PropsWithChildren<{ address: string }>> = ({ addr
     {},
   )
 
-  // In case somebody pastes checksummed address into url (since GraphQL expects lowercase address)
-  const address = routeAddress.toLowerCase()
+  const poolData = usePoolDataQuery(routeAddress)
+  // const chartData = usePoolChartDataQuery(address)
+  const tvlChartData = usePoolChartTvlDataQuery(routeAddress)
+  const volumeChartData = usePoolChartVolumeDataQuery(routeAddress)
 
-  const poolData = usePoolDatasSWR([address])[0]
-  const chartData = usePoolChartDataSWR(address)
-  const transactions = usePoolTransactionsSWR(address)
-
-  const [watchlistPools, addPoolToWatchlist] = useWatchlistPools()
-  const chainName = useGetChainName()
+  const transactions = usePoolTransactionsQuery(routeAddress)
+  const chainId = useChainIdByQuery()
+  const [poolSymbol, symbol0, symbol1] = useMemo(() => {
+    const s0 = getTokenSymbolAlias(poolData?.token0.address, chainId, poolData?.token0.symbol)
+    const s1 = getTokenSymbolAlias(poolData?.token1.address, chainId, poolData?.token1.symbol)
+    return [`${s0} / ${s1}`, s0, s1]
+  }, [chainId, poolData?.token0.address, poolData?.token0.symbol, poolData?.token1.address, poolData?.token1.symbol])
+  const chainName = useChainNameByQuery()
   const chainPath = useMultiChainPath()
+  const infoTypeParam = useStableSwapPath()
+  const isStableSwap = checkIsStableSwap()
+  const stableAPR = useStableSwapAPR(isStableSwap ? poolData?.lpAddress : undefined)
+  const { data: farmConfig } = useQuery({
+    queryKey: [`info/getFarmConfig/${chainId}`],
+    queryFn: () => getLegacyFarmConfig(chainId),
+    enabled: Boolean(isStableSwap && chainId),
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  })
+
+  const feeDisplay = useMemo(() => {
+    if (isStableSwap && farmConfig) {
+      const stableLpFee =
+        farmConfig?.find((d: any) => d.stableSwapAddress?.toLowerCase() === routeAddress.toLowerCase())?.stableLpFee ??
+        0
+      return new BigNumber(stableLpFee)
+        .times((showWeeklyData ? poolData?.volumeUSDWeek : poolData?.volumeUSD) ?? 0)
+        .toNumber()
+    }
+    return showWeeklyData ? poolData?.lpFees7d : poolData?.lpFees24h
+  }, [poolData, isStableSwap, farmConfig, showWeeklyData, routeAddress])
+  const stableTotalFee = useMemo(
+    () => (isStableSwap && feeDisplay ? new BigNumber(feeDisplay).times(2).toNumber() : 0),
+    [isStableSwap, feeDisplay],
+  )
+
+  const hasSmallDifference = useMemo(() => {
+    return poolData ? Math.abs(poolData.token1Price - poolData.token0Price) < 1 : false
+  }, [poolData])
 
   return (
-    <Page symbol={poolData ? `${poolData?.token0.symbol} / ${poolData?.token1.symbol}` : null}>
+    <Page>
+      <NextSeo title={poolData ? poolSymbol : undefined} />
       {poolData ? (
         <>
           <Flex justifyContent="space-between" mb="16px" flexDirection={['column', 'column', 'row']}>
             <Breadcrumbs mb="32px">
-              <NextLinkFromReactRouter to={`/info${chainPath}`}>
+              <NextLinkFromReactRouter to={`/info${chainPath}${infoTypeParam}`}>
                 <Text color="primary">{t('Info')}</Text>
               </NextLinkFromReactRouter>
-              <NextLinkFromReactRouter to={`/info${chainPath}/pools`}>
-                <Text color="primary">{t('Pools')}</Text>
+              <NextLinkFromReactRouter to={`/info${chainPath}/pairs${infoTypeParam}`}>
+                <Text color="primary">{t('Pairs')}</Text>
               </NextLinkFromReactRouter>
               <Flex>
-                <Text mr="8px">{`${poolData.token0.symbol} / ${poolData.token1.symbol}`}</Text>
+                <Text mr="8px">{poolSymbol}</Text>
               </Flex>
             </Breadcrumbs>
             <Flex justifyContent={[null, null, 'flex-end']} mt={['8px', '8px', 0]}>
-              <LinkExternal mr="8px" href={getBlockExploreLink(address, 'address', multiChainId[chainName])}>
+              <ScanLink
+                useBscCoinFallback={ChainLinkSupportChains.includes(multiChainId[chainName])}
+                mr="8px"
+                href={getBlockExploreLink(routeAddress, 'address', multiChainId[chainName])}
+              >
                 {t('View on %site%', { site: multiChainScan[chainName] })}
-              </LinkExternal>
-              <SaveIcon fill={watchlistPools.includes(address)} onClick={() => addPoolToWatchlist(address)} />
+              </ScanLink>
+              <CopyButton ml="4px" text={routeAddress} tooltipMessage={t('Token address copied')} />
             </Flex>
           </Flex>
           <Flex flexDirection="column">
@@ -119,43 +169,40 @@ const PoolPage: React.FC<React.PropsWithChildren<{ address: string }>> = ({ addr
                 size={32}
                 chainName={chainName}
               />
-              <Text
-                ml="38px"
-                bold
-                fontSize={isXs || isSm ? '24px' : '40px'}
-                id="info-pool-pair-title"
-              >{`${poolData.token0.symbol} / ${poolData.token1.symbol}`}</Text>
+              <Text ml="38px" bold fontSize={isXs || isSm ? '24px' : '40px'} id="info-pool-pair-title">
+                {poolSymbol}
+              </Text>
             </Flex>
             <Flex justifyContent="space-between" flexDirection={['column', 'column', 'column', 'row']}>
               <Flex flexDirection={['column', 'column', 'row']} mb={['8px', '8px', null]}>
-                <NextLinkFromReactRouter to={`/info${chainPath}/tokens/${poolData.token0.address}`}>
+                <NextLinkFromReactRouter to={`/info${chainPath}/tokens/${poolData.token0.address}${infoTypeParam}`}>
                   <TokenButton>
                     <CurrencyLogo address={poolData.token0.address} size="24px" chainName={chainName} />
                     <Text fontSize="16px" ml="4px" style={{ whiteSpace: 'nowrap' }} width="fit-content">
-                      {`1 ${poolData.token0.symbol} =  ${formatAmount(poolData.token1Price, {
+                      {`1 ${symbol0} =  ${formatAmount(poolData.token1Price, {
                         notation: 'standard',
                         displayThreshold: 0.001,
-                        tokenPrecision: true,
-                      })} ${poolData.token1.symbol}`}
+                        tokenPrecision: hasSmallDifference ? 'enhanced' : 'normal',
+                      })} ${symbol1}`}
                     </Text>
                   </TokenButton>
                 </NextLinkFromReactRouter>
-                <NextLinkFromReactRouter to={`/info${chainPath}/tokens/${poolData.token1.address}`}>
+                <NextLinkFromReactRouter to={`/info${chainPath}/tokens/${poolData.token1.address}${infoTypeParam}`}>
                   <TokenButton ml={[null, null, '10px']}>
                     <CurrencyLogo address={poolData.token1.address} size="24px" chainName={chainName} />
                     <Text fontSize="16px" ml="4px" style={{ whiteSpace: 'nowrap' }} width="fit-content">
-                      {`1 ${poolData.token1.symbol} =  ${formatAmount(poolData.token0Price, {
+                      {`1 ${symbol1} =  ${formatAmount(poolData.token0Price, {
                         notation: 'standard',
                         displayThreshold: 0.001,
-                        tokenPrecision: true,
-                      })} ${poolData.token0.symbol}`}
+                        tokenPrecision: hasSmallDifference ? 'enhanced' : 'normal',
+                      })} ${symbol0}`}
                     </Text>
                   </TokenButton>
                 </NextLinkFromReactRouter>
               </Flex>
               <Flex>
                 <NextLinkFromReactRouter
-                  to={`/add/${poolData.token0.address}/${poolData.token1.address}?chainId=${multiChainId[chainName]}`}
+                  to={`/add/${poolData.token0.address}/${poolData.token1.address}?chain=${CHAIN_QUERY_NAME[chainId]}`}
                 >
                   <Button mr="8px" variant="secondary">
                     {t('Add Liquidity')}
@@ -188,15 +235,15 @@ const PoolPage: React.FC<React.PropsWithChildren<{ address: string }>> = ({ addr
                         {t('LP reward APR')}
                       </Text>
                       <Text fontSize="24px" bold>
-                        {formatAmount(poolData.lpApr7d)}%
+                        {formatAmount(isStableSwap ? stableAPR : poolData.lpApr7d)}%
                       </Text>
                       <Flex alignItems="center">
+                        <Text mr="4px" fontSize="12px" color="textSubtle">
+                          {t('7D performance')}
+                        </Text>
                         <span ref={targetRef}>
                           <HelpIcon color="textSubtle" />
                         </span>
-                        <Text ml="4px" fontSize="12px" color="textSubtle">
-                          {t('7D performance')}
-                        </Text>
                         {tooltipVisible && tooltip}
                       </Flex>
                     </Flex>
@@ -209,7 +256,7 @@ const PoolPage: React.FC<React.PropsWithChildren<{ address: string }>> = ({ addr
                       <Flex>
                         <CurrencyLogo address={poolData.token0.address} size="24px" chainName={chainName} />
                         <Text small color="textSubtle" ml="8px">
-                          {poolData.token0.symbol}
+                          {symbol0}
                         </Text>
                       </Flex>
                       <Text small>{formatAmount(poolData.liquidityToken0)}</Text>
@@ -218,7 +265,7 @@ const PoolPage: React.FC<React.PropsWithChildren<{ address: string }>> = ({ addr
                       <Flex>
                         <CurrencyLogo address={poolData.token1.address} size="24px" chainName={chainName} />
                         <Text small color="textSubtle" ml="8px">
-                          {poolData.token1.symbol}
+                          {symbol1}
                         </Text>
                       </Flex>
                       <Text small>{formatAmount(poolData.liquidityToken1)}</Text>
@@ -252,13 +299,16 @@ const PoolPage: React.FC<React.PropsWithChildren<{ address: string }>> = ({ addr
                         {showWeeklyData ? t('LP reward fees 7D') : t('LP reward fees 24H')}
                       </Text>
                       <Text fontSize="24px" bold>
-                        ${showWeeklyData ? formatAmount(poolData.lpFees7d) : formatAmount(poolData.lpFees24h)}
+                        ${formatAmount(feeDisplay)}
                       </Text>
                       <Text color="textSubtle" fontSize="12px">
                         {t('out of $%totalFees% total fees', {
-                          totalFees: showWeeklyData
-                            ? formatAmount(poolData.totalFees7d)
-                            : formatAmount(poolData.totalFees24h),
+                          totalFees:
+                            (isStableSwap
+                              ? formatAmount(stableTotalFee)
+                              : showWeeklyData
+                              ? formatAmount(poolData.totalFees7d)
+                              : formatAmount(poolData.totalFees24h)) || '',
                         })}
                       </Text>
                     </Flex>
@@ -266,7 +316,7 @@ const PoolPage: React.FC<React.PropsWithChildren<{ address: string }>> = ({ addr
                 </Flex>
               </Card>
             </Box>
-            <ChartCard variant="pool" chartData={chartData} />
+            <ChartCard variant="pool" volumeChartData={volumeChartData} tvlChartData={tvlChartData} />
           </ContentLayout>
           <Heading mb="16px" mt="40px" scale="lg">
             {t('Transactions')}

@@ -1,11 +1,13 @@
-import styled from 'styled-components'
-import { Skeleton, Text, useTooltip, HelpIcon, Flex, Box, useMatchBreakpoints, Balance, Pool } from '@pancakeswap/uikit'
-import { VaultKey } from 'state/types'
-import { useVaultPoolByKey } from 'state/pools/hooks'
+import { Balance, Box, Flex, HelpIcon, Skeleton, Text, useMatchBreakpoints, useTooltip } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
+import { styled } from 'styled-components'
+
 import { useTranslation } from '@pancakeswap/localization'
-import { getCakeVaultEarnings } from 'views/Pools/helpers'
 import { Token } from '@pancakeswap/sdk'
-import BaseCell, { CellContent } from './BaseCell'
+import BigNumber from 'bignumber.js'
+import { useVaultPoolByKey } from 'state/pools/hooks'
+import { VaultKey } from 'state/types'
+import { getCakeVaultEarnings } from 'views/Pools/helpers'
 import AutoEarningsBreakdown from '../../AutoEarningsBreakdown'
 
 interface AutoEarningsCellProps {
@@ -13,7 +15,7 @@ interface AutoEarningsCellProps {
   account: string
 }
 
-const StyledCell = styled(BaseCell)`
+const StyledCell = styled(Pool.BaseCell)`
   flex: 4.5;
   ${({ theme }) => theme.mediaQueries.sm} {
     flex: 1 0 120px;
@@ -27,13 +29,18 @@ const HelpIconWrapper = styled.div`
 const AutoEarningsCell: React.FC<React.PropsWithChildren<AutoEarningsCellProps>> = ({ pool, account }) => {
   const { t } = useTranslation()
   const { isMobile } = useMatchBreakpoints()
-  const { earningTokenPrice, vaultKey } = pool
+  const { earningTokenPrice = 0, vaultKey } = pool
 
-  const vaultData = useVaultPoolByKey(vaultKey)
+  const vaultData = useVaultPoolByKey(vaultKey as Pool.VaultKey) as Pool.DeserializedPoolLockedVault<Token>
+  const { userData = {} as Pool.DeserializedLockedVaultUser, pricePerFullShare } = vaultData
   const {
-    userData: { userShares, cakeAtLastUserAction, isLoading },
-    pricePerFullShare,
-  } = vaultData
+    userShares,
+    cakeAtLastUserAction,
+    isLoading,
+    currentOverdueFee = new BigNumber(0),
+    userBoostedShare = new BigNumber(0),
+    currentPerformanceFee = new BigNumber(0),
+  } = userData
   const { hasAutoEarnings, autoCakeToDisplay, autoUsdToDisplay } = getCakeVaultEarnings(
     account,
     cakeAtLastUserAction,
@@ -41,10 +48,8 @@ const AutoEarningsCell: React.FC<React.PropsWithChildren<AutoEarningsCellProps>>
     pricePerFullShare,
     earningTokenPrice,
     vaultKey === VaultKey.CakeVault
-      ? (vaultData as Pool.DeserializedPoolLockedVault<Token>).userData.currentPerformanceFee
-          .plus((vaultData as Pool.DeserializedPoolLockedVault<Token>).userData.currentOverdueFee)
-          .plus((vaultData as Pool.DeserializedPoolLockedVault<Token>).userData.userBoostedShare)
-      : null,
+      ? currentPerformanceFee.plus(currentOverdueFee).plus(userBoostedShare)
+      : new BigNumber(0),
   )
 
   const labelText = t('Recent CAKE profit')
@@ -62,7 +67,7 @@ const AutoEarningsCell: React.FC<React.PropsWithChildren<AutoEarningsCellProps>>
 
   return (
     <StyledCell role="cell">
-      <CellContent>
+      <Pool.CellContent>
         <Text fontSize="12px" color="textSubtle" textAlign="left">
           {labelText}
         </Text>
@@ -70,17 +75,26 @@ const AutoEarningsCell: React.FC<React.PropsWithChildren<AutoEarningsCellProps>>
           <Skeleton width="80px" height="16px" />
         ) : (
           <>
-            {tooltipVisible && tooltip}
             <Flex>
               <Box mr="8px" height="32px">
-                <Balance
-                  mt="4px"
-                  bold={!isMobile}
-                  fontSize={isMobile ? '14px' : '16px'}
-                  color={hasEarnings ? 'primary' : 'textDisabled'}
-                  decimals={hasEarnings ? 5 : 1}
-                  value={hasEarnings ? earningTokenBalance : 0}
-                />
+                <Flex>
+                  <Balance
+                    mt="4px"
+                    bold={!isMobile}
+                    fontSize={isMobile ? '14px' : '16px'}
+                    color={hasEarnings ? 'primary' : 'textDisabled'}
+                    decimals={hasEarnings ? 5 : 1}
+                    value={hasEarnings ? earningTokenBalance : 0}
+                  />
+                  {hasEarnings && !isMobile && (
+                    <>
+                      {tooltipVisible && tooltip}
+                      <HelpIconWrapper ref={targetRef}>
+                        <HelpIcon ml="4px" mt="2px" color="textSubtle" />
+                      </HelpIconWrapper>
+                    </>
+                  )}
+                </Flex>
                 {hasEarnings ? (
                   <>
                     {earningTokenPrice > 0 && (
@@ -101,15 +115,10 @@ const AutoEarningsCell: React.FC<React.PropsWithChildren<AutoEarningsCellProps>>
                   </Text>
                 )}
               </Box>
-              {hasEarnings && !isMobile && (
-                <HelpIconWrapper ref={targetRef}>
-                  <HelpIcon color="textSubtle" />
-                </HelpIconWrapper>
-              )}
             </Flex>
           </>
         )}
-      </CellContent>
+      </Pool.CellContent>
     </StyledCell>
   )
 }

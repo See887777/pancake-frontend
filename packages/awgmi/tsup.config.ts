@@ -10,7 +10,11 @@ export default defineConfig({
     'connectors/fewcha': 'core/src/connectors/fewcha.ts',
     'connectors/pontem': 'core/src/connectors/pontem.ts',
     'connectors/safePal': 'core/src/connectors/safePal.ts',
+    'connectors/rise': 'core/src/connectors/rise.ts',
+    'connectors/msafe': 'core/src/connectors/msafe.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,
+  treeshake: true,
+  splitting: true,
 })

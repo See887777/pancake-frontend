@@ -1,25 +1,39 @@
-import { useContext } from 'react'
 import { Currency } from '@pancakeswap/sdk'
-import { Box, Flex, BottomDrawer, useMatchBreakpoints, Swap as SwapUI } from '@pancakeswap/uikit'
-import { EXCHANGE_DOCS_URLS } from 'config/constants'
+import { BottomDrawer, Flex, useMatchBreakpoints } from '@pancakeswap/uikit'
 import { AppBody } from 'components/App'
+import { useRouter } from 'next/router'
+import { useContext, useEffect, useState } from 'react'
 
-import { useCurrency } from '../../hooks/Tokens'
-import { Field } from '../../state/swap/actions'
-import { useSwapState, useSingleTokenSwapInfo } from '../../state/swap/hooks'
+import { useCurrency } from 'hooks/Tokens'
+import { useSwapHotTokenDisplay } from 'hooks/useSwapHotTokenDisplay'
+import { Field } from 'state/swap/actions'
+import { useSingleTokenSwapInfo, useSwapState } from 'state/swap/hooks'
 import Page from '../Page'
-import PriceChartContainer from './components/Chart/PriceChartContainer'
-
-import SwapForm from './components/SwapForm'
-import StableSwapFormContainer from './StableSwap'
-import { StyledInputCurrencyWrapper, StyledSwapContainer } from './styles'
-import SwapTab, { SwapType } from './components/SwapTab'
 import { SwapFeaturesContext } from './SwapFeaturesContext'
+import { V3SwapForm } from './V3Swap'
+import PriceChartContainer from './components/Chart/PriceChartContainer'
+import { SwapSelection } from './components/SwapSelection'
+import { StyledInputCurrencyWrapper, StyledSwapContainer } from './styles'
+import { SwapType } from './types'
 
 export default function Swap() {
-  const { isMobile } = useMatchBreakpoints()
+  const { query } = useRouter()
+  const { isDesktop } = useMatchBreakpoints()
   const { isChartExpanded, isChartDisplayed, setIsChartDisplayed, setIsChartExpanded, isChartSupported } =
     useContext(SwapFeaturesContext)
+  const [isSwapHotTokenDisplay, setIsSwapHotTokenDisplay] = useSwapHotTokenDisplay()
+  const [firstTime, setFirstTime] = useState(true)
+
+  useEffect(() => {
+    if (firstTime && query.showTradingReward) {
+      setFirstTime(false)
+      setIsSwapHotTokenDisplay(true)
+
+      if (!isSwapHotTokenDisplay && isChartDisplayed) {
+        setIsChartDisplayed?.((currentIsChartDisplayed) => !currentIsChartDisplayed)
+      }
+    }
+  }, [firstTime, isChartDisplayed, isSwapHotTokenDisplay, query, setIsSwapHotTokenDisplay, setIsChartDisplayed])
 
   // swap state & price data
   const {
@@ -34,12 +48,18 @@ export default function Swap() {
     [Field.OUTPUT]: outputCurrency ?? undefined,
   }
 
-  const singleTokenPrice = useSingleTokenSwapInfo(inputCurrencyId, inputCurrency, outputCurrencyId, outputCurrency)
+  const singleTokenPrice = useSingleTokenSwapInfo(
+    inputCurrencyId,
+    inputCurrency,
+    outputCurrencyId,
+    outputCurrency,
+    isChartSupported,
+  )
 
   return (
     <Page removePadding={isChartExpanded} hideFooterOnDesktop={isChartExpanded}>
-      <Flex width={['328px', , '100%']} height="100%" justifyContent="center" position="relative">
-        {!isMobile && isChartSupported && (
+      <Flex width={['328px', '100%']} height="100%" justifyContent="center" position="relative" alignItems="flex-start">
+        {isDesktop && isChartSupported && (
           <PriceChartContainer
             inputCurrencyId={inputCurrencyId}
             inputCurrency={currencies[Field.INPUT]}
@@ -51,7 +71,7 @@ export default function Swap() {
             currentSwapPrice={singleTokenPrice}
           />
         )}
-        {isChartSupported && (
+        {!isDesktop && isChartSupported && (
           <BottomDrawer
             content={
               <PriceChartContainer
@@ -63,30 +83,23 @@ export default function Swap() {
                 setIsChartExpanded={setIsChartExpanded}
                 isChartDisplayed={isChartDisplayed}
                 currentSwapPrice={singleTokenPrice}
+                isFullWidthContainer
                 isMobile
               />
             }
             isOpen={isChartDisplayed}
-            setIsOpen={setIsChartDisplayed}
+            setIsOpen={(isOpen) => setIsChartDisplayed?.(isOpen)}
           />
         )}
         <Flex flexDirection="column">
           <StyledSwapContainer $isChartExpanded={isChartExpanded}>
             <StyledInputCurrencyWrapper mt={isChartExpanded ? '24px' : '0'}>
+              <SwapSelection swapType={SwapType.MARKET} />
               <AppBody>
-                <SwapTab>
-                  {(swapTypeState) =>
-                    swapTypeState === SwapType.STABLE_SWAP ? <StableSwapFormContainer /> : <SwapForm />
-                  }
-                </SwapTab>
+                <V3SwapForm />
               </AppBody>
             </StyledInputCurrencyWrapper>
           </StyledSwapContainer>
-          {isChartExpanded && (
-            <Box display={['none', null, null, 'block']} width="100%" height="100%">
-              <SwapUI.Footer variant="side" helpUrl={EXCHANGE_DOCS_URLS} />
-            </Box>
-          )}
         </Flex>
       </Flex>
     </Page>

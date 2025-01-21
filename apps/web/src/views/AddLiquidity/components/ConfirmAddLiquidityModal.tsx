@@ -1,31 +1,29 @@
-import React, { useCallback } from 'react'
-import { Currency, CurrencyAmount, Fraction, Percent, Token } from '@pancakeswap/sdk'
-import { InjectedModalProps, Button } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import TransactionConfirmationModal, {
-  ConfirmationModalContent,
-  TransactionErrorContent,
-} from 'components/TransactionConfirmationModal'
-import { Field } from 'state/burn/actions'
+import { Currency, CurrencyAmount, Fraction, Percent, Token } from '@pancakeswap/sdk'
+import { Button, InjectedModalProps } from '@pancakeswap/uikit'
+import { ConfirmationModalContent } from '@pancakeswap/widgets-internal'
+import TransactionConfirmationModal from 'components/TransactionConfirmationModal'
 import _toNumber from 'lodash/toNumber'
+import React, { useCallback } from 'react'
+import { Field } from 'state/burn/actions'
 import { AddLiquidityModalHeader, PairDistribution } from './common'
 
 interface ConfirmAddLiquidityModalProps {
   title: string
   customOnDismiss: () => void
   attemptingTxn: boolean
-  hash: string
+  hash?: string
   pendingText: string
   currencies: { [field in Field]?: Currency }
-  noLiquidity: boolean
+  noLiquidity?: boolean
   allowedSlippage: number
-  liquidityErrorMessage: string
-  price: Fraction
+  liquidityErrorMessage?: string
+  price?: Fraction | null
   parsedAmounts: { [field in Field]?: CurrencyAmount<Currency> }
   onAdd: () => void
-  poolTokenPercentage: Percent
-  liquidityMinted: CurrencyAmount<Token>
-  currencyToAdd: Token
+  poolTokenPercentage?: Percent
+  liquidityMinted?: CurrencyAmount<Token>
+  currencyToAdd?: Token | null
   isStable?: boolean
 }
 
@@ -55,11 +53,18 @@ const ConfirmAddLiquidityModal: React.FC<
   let percent = 0.5
 
   // Calculate distribution percentage for display
-  if (isStable && parsedAmounts[Field.CURRENCY_A] && parsedAmounts[Field.CURRENCY_B]) {
-    const amountCurrencyA = _toNumber(parsedAmounts[Field.CURRENCY_A].toSignificant(6))
-    const amountCurrencyB = _toNumber(parsedAmounts[Field.CURRENCY_B].toSignificant(6))
+  if ((isStable && parsedAmounts[Field.CURRENCY_A]) || parsedAmounts[Field.CURRENCY_B]) {
+    const amountCurrencyA = parsedAmounts[Field.CURRENCY_A]
+      ? _toNumber(parsedAmounts[Field.CURRENCY_A]?.toSignificant(6))
+      : 0
+    // If there is no price fallback to compare only amounts
+    const currencyAToCurrencyB = (price && parseFloat(price?.toSignificant(4))) || 1
+    const normalizedAmountCurrencyA = currencyAToCurrencyB * amountCurrencyA
+    const amountCurrencyB = parsedAmounts[Field.CURRENCY_B]
+      ? _toNumber(parsedAmounts[Field.CURRENCY_B]?.toSignificant(6))
+      : 0
 
-    percent = amountCurrencyA / (amountCurrencyA + amountCurrencyB)
+    percent = normalizedAmountCurrencyA / (normalizedAmountCurrencyA + amountCurrencyB)
   }
 
   const modalHeader = useCallback(() => {
@@ -87,29 +92,25 @@ const ConfirmAddLiquidityModal: React.FC<
   const modalBottom = useCallback(() => {
     return (
       <Button width="100%" onClick={onAdd} mt="20px">
-        {noLiquidity ? t('Create Pool & Supply') : t('Confirm Supply')}
+        {noLiquidity ? t('Create Pair & Supply') : t('Confirm Supply')}
       </Button>
     )
   }, [noLiquidity, onAdd, t])
 
   const confirmationContent = useCallback(
-    () =>
-      liquidityErrorMessage ? (
-        <TransactionErrorContent onDismiss={onDismiss} message={liquidityErrorMessage} />
-      ) : (
-        <ConfirmationModalContent topContent={modalHeader} bottomContent={modalBottom} />
-      ),
-    [onDismiss, modalBottom, modalHeader, liquidityErrorMessage],
+    () => <ConfirmationModalContent topContent={modalHeader} bottomContent={modalBottom} />,
+    [modalHeader, modalBottom],
   )
 
   return (
     <TransactionConfirmationModal
-      minWidth={['100%', , '420px']}
+      minWidth={['100%', '', '420px']}
       title={title}
       onDismiss={onDismiss}
       customOnDismiss={customOnDismiss}
       attemptingTxn={attemptingTxn}
       currencyToAdd={currencyToAdd}
+      errorMessage={liquidityErrorMessage}
       hash={hash}
       content={confirmationContent}
       pendingText={pendingText}

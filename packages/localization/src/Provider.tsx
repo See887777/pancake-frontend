@@ -1,17 +1,19 @@
-import { createContext, useCallback, useEffect, useState } from 'react'
-import { Language } from '@pancakeswap/uikit'
-import { useLastUpdated } from '@pancakeswap/hooks'
+import { createContext, useCallback, useEffect, useState, useMemo } from 'react'
 import memoize from 'lodash/memoize'
 import omitBy from 'lodash/omitBy'
 import reduce from 'lodash/reduce'
-import isUndefinedOrNull from '@pancakeswap/utils/isUndefinedOrNull'
 import { EN, languages } from './config/languages'
-import { ContextApi, ProviderState, TranslateFunction } from './types'
+import { ContextApi, ProviderState, TranslateFunction, Language } from './types'
 import { LS_KEY, fetchLocale, getLanguageCodeFromLS } from './helpers'
+import useLastUpdated from './hooks/useLastUpdated'
 
 const initialState: ProviderState = {
   isFetching: true,
   currentLanguage: EN,
+}
+
+function isUndefinedOrNull(value: any): boolean {
+  return value === null || value === undefined
 }
 
 const includesVariableRegex = new RegExp(/%\S+?%/, 'gm')
@@ -107,7 +109,10 @@ export const LanguageProvider: React.FC<React.PropsWithChildren> = ({ children }
           return reduce(
             omitBy(data, isUndefinedOrNull),
             (result, dataValue, dataKey) => {
-              return result.replace(getRegExpForDataKey(dataKey), dataValue.toString())
+              if (dataValue !== undefined && dataValue !== null) {
+                return result.replace(getRegExpForDataKey(dataKey), dataValue.toString())
+              }
+              return result
             },
             translatedText,
           )
@@ -120,5 +125,9 @@ export const LanguageProvider: React.FC<React.PropsWithChildren> = ({ children }
     [currentLanguage, lastUpdated],
   )
 
-  return <LanguageContext.Provider value={{ ...state, setLanguage, t: translate }}>{children}</LanguageContext.Provider>
+  const providerValue = useMemo(() => {
+    return { ...state, setLanguage, t: translate }
+  }, [state, setLanguage, translate])
+
+  return <LanguageContext.Provider value={providerValue}>{children}</LanguageContext.Provider>
 }

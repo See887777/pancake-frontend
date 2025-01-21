@@ -1,16 +1,25 @@
 import { useRef, RefObject, useCallback, useState, useMemo } from 'react'
 import { Token } from '@pancakeswap/sdk'
-import { Text, Button, CloseIcon, IconButton, LinkExternal, Input, Link } from '@pancakeswap/uikit'
-import styled from 'styled-components'
+import {
+  Text,
+  Button,
+  DeleteOutlineIcon,
+  IconButton,
+  BscScanIcon,
+  Input,
+  Link,
+  AutoColumn,
+  Column,
+} from '@pancakeswap/uikit'
+import { styled } from 'styled-components'
 import Row, { RowBetween, RowFixed } from 'components/Layout/Row'
 import { useToken } from 'hooks/Tokens'
 import { useRemoveUserAddedToken } from 'state/user/hooks'
 import useUserAddedTokens from 'state/user/hooks/useUserAddedTokens'
 import { CurrencyLogo } from 'components/Logo'
-import { getBlockExploreLink, isAddress } from 'utils'
+import { getBlockExploreLink, safeGetAddress } from 'utils'
 import { useTranslation } from '@pancakeswap/localization'
 import { useActiveChainId } from 'hooks/useActiveChainId'
-import Column, { AutoColumn } from '../Layout/Column'
 import ImportRow from './ImportRow'
 import { CurrencyModalView } from './types'
 
@@ -47,7 +56,7 @@ export default function ManageTokens({
   const inputRef = useRef<HTMLInputElement>()
   const handleInput = useCallback((event) => {
     const input = event.target.value
-    const checksummedInput = isAddress(input)
+    const checksummedInput = safeGetAddress(input)
     setSearchQuery(checksummedInput || input)
   }, [])
 
@@ -73,22 +82,30 @@ export default function ManageTokens({
         <RowBetween key={token.address} width="100%">
           <RowFixed>
             <CurrencyLogo currency={token} size="20px" />
-            <Link external href={getBlockExploreLink(token.address, 'address', chainId)} color="textSubtle" ml="10px">
+            <Link
+              external
+              href={getBlockExploreLink(token.address, 'address', chainId)}
+              color="textSubtle"
+              ml="10px"
+              mr="3px"
+            >
               {token.symbol}
             </Link>
+            <a href={getBlockExploreLink(token.address, 'token', chainId)} target="_blank" rel="noreferrer noopener">
+              <BscScanIcon width="20px" color="textSubtle" />
+            </a>
           </RowFixed>
           <RowFixed>
             <IconButton variant="text" onClick={() => removeToken(chainId, token.address)}>
-              <CloseIcon />
+              <DeleteOutlineIcon color="textSubtle" />
             </IconButton>
-            <LinkExternal href={getBlockExploreLink(token.address, 'address', chainId)} />
           </RowFixed>
         </RowBetween>
       ))
     )
   }, [userAddedTokens, chainId, removeToken])
 
-  const isAddressValid = searchQuery === '' || isAddress(searchQuery)
+  const isAddressValid = searchQuery === '' || safeGetAddress(searchQuery)
 
   return (
     <Wrapper>
@@ -119,7 +136,7 @@ export default function ManageTokens({
         {tokenList}
         <Footer>
           <Text bold color="textSubtle">
-            {userAddedTokens?.length} {userAddedTokens.length === 1 ? t('Custom Token') : t('Custom Tokens')}
+            {userAddedTokens?.length} {userAddedTokens.length === 1 ? t('Imported Token') : t('Imported Tokens')}
           </Text>
           {userAddedTokens.length > 0 && (
             <Button variant="tertiary" onClick={handleRemoveAll}>

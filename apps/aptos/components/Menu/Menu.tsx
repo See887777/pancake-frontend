@@ -1,90 +1,20 @@
-/* eslint-disable jsx-a11y/anchor-is-valid */
-import { ContextApi, languageList, useTranslation } from '@pancakeswap/localization'
-import {
-  DropdownMenuItems,
-  EarnFillIcon,
-  EarnIcon,
-  Menu as UIMenu,
-  MenuItemsType,
-  MoreIcon,
-  NextLinkFromReactRouter,
-  SwapFillIcon,
-  SwapIcon,
-} from '@pancakeswap/uikit'
+import { languageList, useTranslation } from '@pancakeswap/localization'
+import { Menu as UIMenu } from '@pancakeswap/uikit'
+import { NextLinkFromReactRouter } from '@pancakeswap/widgets-internal'
+
+import { usePhishingBanner } from '@pancakeswap/utils/user'
 import { NetworkSwitcher } from 'components/NetworkSwitcher'
 import PhishingWarningBanner from 'components/PhishingWarningBanner'
+import { useActiveChainId } from 'hooks/useNetwork'
 import { useCakePrice } from 'hooks/useStablePrice'
 import orderBy from 'lodash/orderBy'
 import { useTheme } from 'next-themes'
 import { useRouter } from 'next/router'
-import { ReactNode, useMemo } from 'react'
-import { usePhishingBanner } from 'state/user'
-import { footerLinks } from './footerConfig'
+import { useEffect, useMemo, useState } from 'react'
 import { SettingsButton } from './Settings/SettingsButton'
 import UserMenu from './UserMenu'
-
-export type ConfigMenuDropDownItemsType = DropdownMenuItems & { hideSubNav?: boolean }
-
-export type ConfigMenuItemsType = Omit<MenuItemsType, 'items'> & { hideSubNav?: boolean; image?: string } & {
-  items?: ConfigMenuDropDownItemsType[]
-}
-
-const config: (t: ContextApi['t']) => ConfigMenuItemsType[] = (t) => [
-  {
-    label: t('Trade'),
-    icon: SwapIcon,
-    fillIcon: SwapFillIcon,
-    href: '/swap',
-    showItemsOnMobile: false,
-    items: [
-      {
-        label: t('Swap'),
-        href: '/swap',
-      },
-      {
-        label: t('Liquidity'),
-        href: '/liquidity',
-      },
-    ],
-  },
-  {
-    label: t('Earn'),
-    href: '/farms',
-    icon: EarnIcon,
-    fillIcon: EarnFillIcon,
-    image: '/images/decorations/pe2.png',
-    disabled: true,
-    items: [
-      {
-        label: t('Farms'),
-        href: '/farms',
-        status: { text: t('Soon'), color: 'warning' },
-        disabled: true,
-      },
-      {
-        label: t('Pools'),
-        href: '/pools',
-        status: { text: t('Soon'), color: 'warning' },
-        disabled: true,
-      },
-    ],
-  },
-  {
-    label: '',
-    href: '/ifo',
-    icon: MoreIcon,
-    hideSubNav: true,
-    disabled: true,
-    items: [
-      {
-        label: t('IFO'),
-        href: '/ifo',
-        disabled: true,
-        status: { text: t('Soon'), color: 'warning' },
-      },
-    ],
-  },
-]
+import { footerLinks } from './footerConfig'
+import { ConfigMenuItemsType, useMenuItems } from './hooks/useMenuItems'
 
 export const getActiveMenuItem = ({ pathname, menuConfig }: { pathname: string; menuConfig: ConfigMenuItemsType[] }) =>
   menuConfig.find((menuItem) => pathname.startsWith(menuItem.href) || getActiveSubMenuItem({ menuItem, pathname }))
@@ -109,15 +39,20 @@ export const getActiveSubMenuItem = ({ pathname, menuItem }: { pathname: string;
   return mostSpecificMatch
 }
 
-export const Menu = ({ children }: { children: ReactNode }) => {
+const LinkComponent = (linkProps) => {
+  return <NextLinkFromReactRouter to={linkProps.href} {...linkProps} prefetch={false} />
+}
+
+export const Menu = (props) => {
   const { currentLanguage, setLanguage, t } = useTranslation()
 
-  const menuItems = useMemo(() => config(t), [t])
+  const menuItems = useMenuItems()
   const { pathname } = useRouter()
   const activeMenuItem = getActiveMenuItem({ menuConfig: menuItems, pathname })
   const activeSubMenuItem = getActiveSubMenuItem({ menuItem: activeMenuItem, pathname })
   const { setTheme, resolvedTheme } = useTheme()
   const [show] = usePhishingBanner()
+  const chainId = useActiveChainId()
 
   const { data: cakePrice } = useCakePrice()
 
@@ -131,34 +66,43 @@ export const Menu = ({ children }: { children: ReactNode }) => {
     return footerLinks(t)
   }, [t])
 
+  const [isClient, setIsClient] = useState(false)
+
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
   return (
-    <UIMenu
-      linkComponent={(linkProps) => {
-        return <NextLinkFromReactRouter to={linkProps.href} {...linkProps} prefetch={false} />
-      }}
-      links={menuItems}
-      activeItem={activeMenuItem?.href}
-      isDark={isDark}
-      banner={show ? <PhishingWarningBanner /> : undefined}
-      rightSide={
-        <>
-          <SettingsButton mr="8px" />
-          <NetworkSwitcher />
-          <UserMenu />
-        </>
-      }
-      setLang={setLanguage}
-      footerLinks={getFooterLinks}
-      currentLang={currentLanguage.code}
-      langs={languageList}
-      cakePriceUsd={cakePrice ? Number(cakePrice) : undefined}
-      // @ts-ignore
-      subLinks={activeMenuItem?.hideSubNav || activeSubMenuItem?.hideSubNav ? [] : activeMenuItem?.items}
-      activeSubItem={activeSubMenuItem?.href}
-      toggleTheme={toggleTheme}
-      buyCakeLabel={t('Buy CAKE')}
-    >
-      {children}
-    </UIMenu>
+    <>
+      {isClient ? (
+        <UIMenu
+          linkComponent={LinkComponent}
+          chainId={chainId}
+          links={menuItems}
+          activeItem={activeMenuItem?.href}
+          isDark={isDark}
+          banner={show ? <PhishingWarningBanner /> : undefined}
+          rightSide={
+            <>
+              <SettingsButton mr="8px" />
+              <NetworkSwitcher />
+              <UserMenu />
+            </>
+          }
+          setLang={setLanguage}
+          footerLinks={getFooterLinks}
+          currentLang={currentLanguage.code}
+          langs={languageList}
+          cakePriceUsd={cakePrice ? Number(cakePrice) : undefined}
+          // @ts-ignore
+          subLinks={activeMenuItem?.hideSubNav || activeSubMenuItem?.hideSubNav ? [] : activeMenuItem?.items}
+          activeSubItem={activeSubMenuItem?.href}
+          toggleTheme={toggleTheme}
+          buyCakeLabel={t('Buy CAKE')}
+          buyCakeLink="https://aptos.pancakeswap.finance/swap?outputCurrency=0x159df6b7689437016108a019fd5bef736bac692b6d4a1f10c941f6fbb9a74ca6::oft::CakeOFT"
+          {...props}
+        />
+      ) : undefined}
+    </>
   )
 }

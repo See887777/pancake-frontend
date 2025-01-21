@@ -1,20 +1,20 @@
-import { useCallback } from 'react'
-import { Pool } from '@pancakeswap/uikit'
-import { useQueryClient } from '@pancakeswap/awgmi'
+import { Pool } from '@pancakeswap/widgets-internal'
+import { useQueryClient } from '@tanstack/react-query'
 import { SMARTCHEF_ADDRESS } from 'contracts/smartchef/constants'
 import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import splitTypeTag from 'components/Pools/utils/splitTypeTag'
+import { useCallback } from 'react'
+import splitTypeTag from 'utils/splitTypeTag'
 
 import useHarvestPool from '../../hooks/useHarvestPool'
 import CollectModalContainer from './CollectModalContainer'
 
 const CollectModal = ({ poolAddress = '', ...rest }: React.PropsWithChildren<Pool.CollectModalProps>) => {
   const queryClient = useQueryClient()
-  const { account, networkName, chainId } = useActiveWeb3React()
+  const { account, networkName } = useActiveWeb3React()
 
-  const [stakingTokenAddress, earningTokenAddress, sousId] = splitTypeTag(poolAddress[chainId])
+  const [stakingTokenAddress, earningTokenAddress, sousId] = splitTypeTag(poolAddress)
 
-  const { onReward } = useHarvestPool({ stakingTokenAddress, earningTokenAddress, sousId })
+  const onReward = useHarvestPool({ stakingTokenAddress, earningTokenAddress, sousId })
 
   const onDone = useCallback(() => {
     queryClient.invalidateQueries({

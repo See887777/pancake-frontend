@@ -1,22 +1,20 @@
-import { Card, CardBody, Text, WaitIcon } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import { NodeRound, BetPosition } from 'state/types'
+import { BetPosition } from '@pancakeswap/prediction'
+import { Card, CardBody, Text, WaitIcon } from '@pancakeswap/uikit'
 import useTheme from 'hooks/useTheme'
-import { useGetIntervalSeconds } from 'state/predictions/hooks'
-import { ROUND_BUFFER } from 'state/predictions/config'
+import { NodeRound } from 'state/types'
 import { formatRoundTime } from '../../helpers'
 import useCountdown from '../../hooks/useCountdown'
 import { RoundResultBox } from '../RoundResult'
-import MultiplierArrow from './MultiplierArrow'
 import CardHeader, { getBorderBackground } from './CardHeader'
+import MultiplierArrow from './MultiplierArrow'
 
 interface SoonRoundCardProps {
   round: NodeRound
 }
 
 const SoonRoundCard: React.FC<React.PropsWithChildren<SoonRoundCardProps>> = ({ round }) => {
-  const intervalSeconds = useGetIntervalSeconds()
-  const { secondsRemaining } = useCountdown(round.startTimestamp + intervalSeconds + ROUND_BUFFER)
+  const { secondsRemaining } = useCountdown(round?.startTimestamp ?? 0)
   const countdown = formatRoundTime(secondsRemaining)
   const { t } = useTranslation()
   const { theme } = useTheme()

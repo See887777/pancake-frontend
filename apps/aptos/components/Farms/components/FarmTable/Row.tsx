@@ -1,34 +1,27 @@
+import { FarmWithStakedValue } from '@pancakeswap/farms'
+import { useDelayedUnmount } from '@pancakeswap/hooks'
 import { useTranslation } from '@pancakeswap/localization'
-import {
-  Box,
-  Farm as FarmUI,
-  FarmTableEarnedProps,
-  FarmTableFarmTokenInfoProps,
-  FarmTableLiquidityProps,
-  FarmTableMultiplierProps,
-  Flex,
-  Skeleton,
-  useDelayedUnmount,
-  useMatchBreakpoints,
-} from '@pancakeswap/uikit'
+import { Box, Flex, Skeleton, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import { FarmWidget } from '@pancakeswap/widgets-internal'
 import { createElement, useEffect, useRef, useState } from 'react'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 
-import { useFarmEarning } from 'state/farms/hook'
-import { DesktopColumnSchema, FarmWithStakedValue, MobileColumnSchema } from '../types'
+import { EarnedUsdPrice } from '../FarmCard/EarnedUsdPrice'
 import ActionPanel from './Actions/ActionPanel'
 import Apr, { AprProps } from './Apr'
 import Farm from './Farm'
 
-const { FarmAuctionTag, CoreTag } = FarmUI.Tags
-const { CellLayout, Details, Multiplier, Liquidity, Earned } = FarmUI.FarmTable
+const { MobileColumnSchema, DesktopColumnSchema } = FarmWidget
+const { FarmAuctionTag, CoreTag } = FarmWidget.Tags
+const { CellLayout, Details, Multiplier, Liquidity } = FarmWidget.FarmTable
 
 export interface RowProps {
   apr: AprProps
-  farm: FarmTableFarmTokenInfoProps
-  earned: FarmTableEarnedProps
-  multiplier: FarmTableMultiplierProps
-  liquidity: FarmTableLiquidityProps
+  farm: FarmWidget.FarmTableFarmTokenInfoProps
+  earned: FarmWithStakedValue
+  multiplier: FarmWidget.FarmTableMultiplierProps
+  liquidity: FarmWidget.FarmTableLiquidityProps
   details: FarmWithStakedValue
   type: 'core' | 'community'
   initialActivity?: boolean
@@ -36,12 +29,13 @@ export interface RowProps {
 
 interface RowPropsWithLoading extends RowProps {
   userDataReady: boolean
+  isLastFarm: boolean
 }
 
 const cells = {
   apr: Apr,
   farm: Farm,
-  earned: Earned,
+  earned: EarnedUsdPrice,
   details: Details,
   multiplier: Multiplier,
   liquidity: Liquidity,
@@ -80,26 +74,18 @@ const FarmMobileCell = styled.td`
 `
 
 const Row: React.FunctionComponent<React.PropsWithChildren<RowPropsWithLoading>> = (props) => {
-  const { details: _details, initialActivity, multiplier } = props
+  const { t } = useTranslation()
+  const { details, initialActivity, multiplier } = props
   const userDataReady = multiplier.multiplier !== undefined
   const hasSetInitialValue = useRef(false)
-  const hasStakedAmount = false
-  // const hasStakedAmount = !!useFarmUser(details.pid).stakedBalance.toNumber()
+  const stakedBalance = details.userData ? details.userData.stakedBalance : BIG_ZERO
+  const hasStakedAmount = stakedBalance.gt(0)
+
   const [actionPanelExpanded, setActionPanelExpanded] = useState(hasStakedAmount)
   const shouldRenderChild = useDelayedUnmount(actionPanelExpanded, 300)
-  const { t } = useTranslation()
 
   const toggleActionPanel = () => {
     setActionPanelExpanded(!actionPanelExpanded)
-  }
-
-  const earnings = useFarmEarning(String(props.farm.pid))
-
-  const cellData = { ...props }
-
-  cellData.earned = {
-    ...props.earned,
-    earnings,
   }
 
   useEffect(() => {
@@ -156,7 +142,12 @@ const Row: React.FunctionComponent<React.PropsWithChildren<RowPropsWithLoading>>
                   <td key={key}>
                     <CellInner>
                       <CellLayout label={t('APR')}>
-                        <Apr {...props.apr} hideButton={isSmallerScreen} />
+                        <Apr
+                          {...props.apr}
+                          hideButton={isSmallerScreen}
+                          farmCakePerSecond={multiplier.farmCakePerSecond}
+                          totalMultipliers={multiplier.totalMultipliers}
+                        />
                       </CellLayout>
                     </CellInner>
                   </td>
@@ -166,7 +157,7 @@ const Row: React.FunctionComponent<React.PropsWithChildren<RowPropsWithLoading>>
                   <td key={key}>
                     <CellInner>
                       <CellLayout label={t(tableSchema[columnIndex].label)}>
-                        {createElement(cells[key], { ...cellData[key], userDataReady })}
+                        {createElement(cells[key], { ...props[key], userDataReady })}
                       </CellLayout>
                     </CellInner>
                   </td>
@@ -194,21 +185,26 @@ const Row: React.FunctionComponent<React.PropsWithChildren<RowPropsWithLoading>>
           </FarmMobileCell>
         </tr>
         <StyledTr onClick={toggleActionPanel}>
-          <td width="33%">
+          <td width="50%">
             <EarnedMobileCell>
               <CellLayout label={t('Earned')}>
-                <Earned {...cellData.earned} userDataReady={!!userDataReady} />
+                <EarnedUsdPrice {...props.earned} />
               </CellLayout>
             </EarnedMobileCell>
           </td>
-          <td width="33%">
+          <td>
             <AprMobileCell>
               <CellLayout label={t('APR')}>
-                <Apr {...props.apr} hideButton />
+                <Apr
+                  {...props.apr}
+                  hideButton
+                  farmCakePerSecond={multiplier.farmCakePerSecond}
+                  totalMultipliers={multiplier.totalMultipliers}
+                />
               </CellLayout>
             </AprMobileCell>
           </td>
-          <td width="33%">
+          <td width="10%">
             <CellInner style={{ justifyContent: 'flex-end' }}>
               <Details actionPanelToggled={actionPanelExpanded} />
             </CellInner>
@@ -224,7 +220,12 @@ const Row: React.FunctionComponent<React.PropsWithChildren<RowPropsWithLoading>>
       {shouldRenderChild && (
         <tr>
           <td colSpan={7}>
-            <ActionPanel {...cellData} expanded={actionPanelExpanded} />
+            <ActionPanel
+              {...props}
+              expanded={actionPanelExpanded}
+              alignLinksToRight={isMobile}
+              isLastFarm={props.isLastFarm}
+            />
           </td>
         </tr>
       )}

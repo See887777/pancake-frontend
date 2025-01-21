@@ -6,14 +6,14 @@ import {
   removeMulticallListeners,
   updateMulticallResults,
 } from './actions'
-import reducer, { MulticallState } from './reducer'
+import { multicallReducer, MulticallState } from './reducer'
 
-const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f'
+const DAI_ADDRESS = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
 
 describe('multicall reducer', () => {
   let store: Store<MulticallState>
   beforeEach(() => {
-    store = createStore(reducer)
+    store = createStore(multicallReducer)
   })
 
   it('has correct initial state', () => {

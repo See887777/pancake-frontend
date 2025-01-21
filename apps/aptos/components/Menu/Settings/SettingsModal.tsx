@@ -12,12 +12,19 @@ import {
   ThemeSwitcher,
   Toggle,
 } from '@pancakeswap/uikit'
+import { ExpertModal } from '@pancakeswap/widgets-internal'
+
 import { escapeRegExp } from '@pancakeswap/utils/escapeRegExp'
+import {
+  useAudioPlay,
+  useExpertMode,
+  useUserExpertModeAcknowledgement,
+  useUserSingleHopOnly,
+  useUserSlippage,
+} from '@pancakeswap/utils/user'
 import { useTheme } from 'next-themes'
 import { useCallback, useState } from 'react'
-import { useAudioPlay, useUserSlippage } from 'state/user'
-import { useUserSingleHopOnly } from 'state/user/singleHop'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 
 export const withCustomOnDismiss =
   (Component) =>
@@ -93,7 +100,7 @@ const SlippageSetting = () => {
           text={t(
             'Setting a high slippage tolerance can help transactions succeed, but you may not get such a good price. Use with caution.',
           )}
-          placement="top-start"
+          placement="top"
           ml="4px"
         />
       </Flex>
@@ -178,8 +185,30 @@ export const SettingsModal: React.FC<React.PropsWithChildren<InjectedModalProps>
 
   const { t } = useTranslation()
   const { resolvedTheme, setTheme } = useTheme()
+  const [expertMode, setExpertMode] = useExpertMode()
+  const [showConfirmExpertModal, setShowConfirmExpertModal] = useState(false)
+  const [showExpertModeAcknowledgement, setShowExpertModeAcknowledgement] = useUserExpertModeAcknowledgement()
 
   const isDark = resolvedTheme === 'dark'
+
+  const handleExpertModeToggle = () => {
+    if (expertMode || !showExpertModeAcknowledgement) {
+      setExpertMode((s) => !s)
+    } else {
+      setShowConfirmExpertModal(true)
+    }
+  }
+
+  if (showConfirmExpertModal) {
+    return (
+      <ExpertModal
+        setShowConfirmExpertModal={setShowConfirmExpertModal}
+        onDismiss={onDismiss}
+        toggleExpertMode={() => setExpertMode((s) => !s)}
+        setShowExpertModeAcknowledgement={setShowExpertModeAcknowledgement}
+      />
+    )
+  }
 
   return (
     <Modal
@@ -194,30 +223,29 @@ export const SettingsModal: React.FC<React.PropsWithChildren<InjectedModalProps>
           <ThemeSwitcher isDark={isDark} toggleTheme={() => setTheme(isDark ? 'light' : 'dark')} />
         </Flex>
         <Flex pt="3px" flexDirection="column">
-          {/* TODO: aptos swap */}
-          {/* <Flex justifyContent="space-between" alignItems="center" mb="24px">
+          <Flex justifyContent="space-between" alignItems="center" mb="24px">
             <Flex alignItems="center">
               <Text>{t('Expert Mode')}</Text>
               <QuestionHelper
                 text={t('Bypasses confirmation modals and allows high slippage trades. Use at your own risk.')}
-                placement="top-start"
+                placement="top"
                 ml="4px"
               />
             </Flex>
             <Toggle id="toggle-expert-mode-button" scale="md" checked={expertMode} onChange={handleExpertModeToggle} />
-          </Flex> */}
+          </Flex>
           <SlippageSetting />
           <Flex justifyContent="space-between" alignItems="center" mb="24px">
             <Flex alignItems="center">
-              <Text>{t('Disable Multihops')}</Text>
-              <QuestionHelper text={t('Restricts swaps to direct pairs only.')} placement="top-start" ml="4px" />
+              <Text>{t('Allow Multihops')}</Text>
+              <QuestionHelper text={t('Restricts swaps to direct pairs only.')} placement="top" ml="4px" />
             </Flex>
             <Toggle
               id="toggle-disable-multihop-button"
-              checked={singleHopOnly}
+              checked={!singleHopOnly}
               scale="md"
               onChange={() => {
-                setSingleHopOnly(!singleHopOnly)
+                setSingleHopOnly((s) => !s)
               }}
             />
           </Flex>
@@ -226,7 +254,7 @@ export const SettingsModal: React.FC<React.PropsWithChildren<InjectedModalProps>
               <Text>{t('Flippy sounds')}</Text>
               <QuestionHelper
                 text={t('Fun sounds to make a truly immersive pancake-flipping trading experience')}
-                placement="top-start"
+                placement="top"
                 ml="4px"
               />
             </Flex>

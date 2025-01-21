@@ -1,26 +1,26 @@
-import { ReactNode } from 'react'
+import { useTranslation } from '@pancakeswap/localization'
 import {
-  Text,
-  Heading,
+  BlockIcon,
+  Button,
   Flex,
-  Skeleton,
+  Heading,
   MedalBronzeIcon,
   MedalGoldIcon,
   MedalPurpleIcon,
   MedalSilverIcon,
   MedalTealIcon,
-  BlockIcon,
-  Button,
+  Skeleton,
+  Text,
   useModal,
 } from '@pancakeswap/uikit'
-import styled from 'styled-components'
-import { useTranslation } from '@pancakeswap/localization'
-import { REGISTRATION, LIVE } from 'config/constants/trading-competition/phases'
+import { LIVE, REGISTRATION } from 'config/constants/trading-competition/phases'
 import useGetUsernameWithVisibility from 'hooks/useUsernameWithVisibility'
-import { YourScoreProps } from '../../types'
-import UserRankBox from './UserRankBox'
-import NextRankBox from './NextRankBox'
+import { ReactNode } from 'react'
+import { styled } from 'styled-components'
 import { localiseTradingVolume } from '../../helpers'
+import { YourScoreProps } from '../../types'
+import NextRankBox from './NextRankBox'
+import UserRankBox from './UserRankBox'
 
 const TeamRankTextWrapper = styled(Flex)`
   align-items: center;
@@ -56,11 +56,12 @@ const CardUserInfo: React.FC<React.PropsWithChildren<CardUserInfoProps>> = ({
 }) => {
   const { t } = useTranslation()
   const [onPresentShareModal] = useModal(shareModal, false)
-  const { global, team, volume, next_rank: nextRank } = userLeaderboardInformation
-  const { usernameWithVisibility } = useGetUsernameWithVisibility(profile)
+  const { global, team, volume, next_rank: nextRank } = userLeaderboardInformation ?? {}
+  const { usernameWithVisibility } = useGetUsernameWithVisibility(profile?.username)
   const shouldShowUserRanks = account && hasRegistered
 
-  const getMedal = (currentRank: string | number) => {
+  const getMedal = (currentRank_?: string | number) => {
+    const currentRank = Number(currentRank_)
     if (currentRank === 1) {
       return {
         current: <MedalGoldIcon />,
@@ -97,7 +98,8 @@ const CardUserInfo: React.FC<React.PropsWithChildren<CardUserInfoProps>> = ({
     }
   }
 
-  const getNextTier = (currentRank: string | number) => {
+  const getNextTier = (currentRank_?: string | number) => {
+    const currentRank = Number(currentRank_)
     if (currentRank === 1) {
       return {
         color: null,
@@ -169,18 +171,18 @@ const CardUserInfo: React.FC<React.PropsWithChildren<CardUserInfoProps>> = ({
       </Text>
       {shouldShowUserRanks && (
         <>
-          {profile?.nft && volume > 0 && (
+          {profile?.nft && volume && volume > 0 && (
             <Button mt="12px" variant="secondary" scale="sm" onClick={onPresentShareModal}>
               {t('Share Score')}
             </Button>
           )}
           <RanksWrapper>
             <Flex width="100%" flexDirection={['column', null, null, 'row']} mr={['8px', null, null, 0]}>
-              {volume > 0 && (
+              {volume && volume > 0 && (
                 <UserRankBox
                   flex="1"
                   title={t('Rank in team').toUpperCase()}
-                  footer={userLeaderboardInformation ? t('#%global% Overall', { global: global.toLocaleString() }) : ''}
+                  footer={userLeaderboardInformation ? t('#%global% Overall', { global }) : ''}
                   mr={[0, null, null, '8px']}
                   mb={['8px', null, null, 0]}
                 >
@@ -191,7 +193,7 @@ const CardUserInfo: React.FC<React.PropsWithChildren<CardUserInfoProps>> = ({
                       <Heading textAlign="center" scale="lg" mr="8px">
                         #{team}
                       </Heading>
-                      {medal.current}
+                      {medal?.current}
                     </TeamRankTextWrapper>
                   )}
                 </UserRankBox>
@@ -201,7 +203,7 @@ const CardUserInfo: React.FC<React.PropsWithChildren<CardUserInfoProps>> = ({
                 title={t('Your volume').toUpperCase()}
                 footer={t('Since start')}
                 // Add responsive mr if competition is LIVE
-                mr={currentPhase.state !== REGISTRATION ? [0, null, null, '8px'] : 0}
+                mr={currentPhase?.state !== REGISTRATION ? [0, null, null, '8px'] : 0}
                 mb={['8px', null, null, 0]}
               >
                 {!userLeaderboardInformation ? (
@@ -215,14 +217,14 @@ const CardUserInfo: React.FC<React.PropsWithChildren<CardUserInfoProps>> = ({
               {extraUserRankBox || null}
             </Flex>
             {/* Show next ranks if competition is LIVE */}
-            {currentPhase.state === LIVE &&
+            {currentPhase?.state === LIVE &&
               (team === 1 ? (
                 // If user is first
                 <NextRankBox
                   flex="2"
                   title={t('Your tier: gold').toUpperCase()}
                   footer={t('Love, The Chefs x')}
-                  currentMedal={medal.current}
+                  currentMedal={medal?.current}
                   hideArrow
                 >
                   <Heading scale="lg">{t('HECK YEAH!')}</Heading>
@@ -230,10 +232,10 @@ const CardUserInfo: React.FC<React.PropsWithChildren<CardUserInfoProps>> = ({
               ) : (
                 <NextRankBox
                   flex="2"
-                  title={`${t('Next tier').toUpperCase()}: ${nextTier.color}`}
-                  footer={t('to become #%rank% in team', { rank: nextTier.rank })}
-                  currentMedal={medal.current}
-                  nextMedal={medal.next}
+                  title={`${t('Next tier').toUpperCase()}: ${nextTier?.color}`}
+                  footer={t('to become #%rank% in team', { rank: nextTier?.rank ?? undefined })}
+                  currentMedal={medal?.current}
+                  nextMedal={medal?.next ?? undefined}
                 >
                   <Heading scale="lg">+${userLeaderboardInformation && localiseTradingVolume(nextRank)}</Heading>
                 </NextRankBox>

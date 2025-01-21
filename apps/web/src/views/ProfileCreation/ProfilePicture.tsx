@@ -1,32 +1,19 @@
-import { useContext, useEffect, useState } from 'react'
-import styled from 'styled-components'
-import {
-  AutoRenewIcon,
-  Button,
-  Card,
-  CardBody,
-  Heading,
-  Skeleton,
-  Text,
-  useToast,
-  NextLinkFromReactRouter,
-} from '@pancakeswap/uikit'
-import { useAccount, useSigner } from 'wagmi'
-import { getPancakeProfileAddress } from 'utils/addressHelpers'
-import { getErc721Contract } from 'utils/contractHelpers'
 import { useTranslation } from '@pancakeswap/localization'
-import { useProfileContract } from 'hooks/useContract'
+import { AutoRenewIcon, Button, Card, CardBody, Heading, Skeleton, Text, useToast } from '@pancakeswap/uikit'
+import { NextLinkFromReactRouter } from '@pancakeswap/widgets-internal'
+
 import { useCallWithGasPrice } from 'hooks/useCallWithGasPrice'
 import useCatchTxError from 'hooks/useCatchTxError'
-import { nftsBaseUrl } from 'views/Nft/market/constants'
+import { useState } from 'react'
 import { NftLocation } from 'state/nftMarket/types'
-import { useProfile } from 'state/profile/hooks'
-import SelectionCard from './SelectionCard'
+import { styled } from 'styled-components'
+import { getPancakeProfileAddress } from 'utils/addressHelpers'
+import { getErc721Contract } from 'utils/contractHelpers'
+import { useWalletClient } from 'wagmi'
+import { useUserProfileCreationNfts } from 'views/Nft/market/hooks/useUserProfileCreationNfts'
 import NextStepButton from './NextStepButton'
-import { ProfileCreationContext } from './contexts/ProfileCreationProvider'
-import multicall from '../../utils/multicall'
-import profileABI from '../../config/abi/pancakeProfile.json'
-import { useNftsForAddress } from '../Nft/market/hooks/useNftsForAddress'
+import SelectionCard from './SelectionCard'
+import useProfileCreation from './contexts/hook'
 
 const Link = styled(NextLinkFromReactRouter)`
   color: ${({ theme }) => theme.colors.primary};
@@ -37,58 +24,23 @@ const NftWrapper = styled.div`
 `
 
 const ProfilePicture: React.FC = () => {
-  const { address: account } = useAccount()
   const [isApproved, setIsApproved] = useState(false)
-  const [userProfileCreationNfts, setUserProfileCreationNfts] = useState(null)
-  const { selectedNft, actions } = useContext(ProfileCreationContext)
-  const profileContract = useProfileContract(false)
-  const { isLoading: isProfileLoading, profile } = useProfile()
-  const { nfts, isLoading: isUserNftLoading } = useNftsForAddress(account, profile, isProfileLoading)
+  const { selectedNft, actions } = useProfileCreation()
 
-  useEffect(() => {
-    const fetchUserPancakeCollectibles = async () => {
-      try {
-        const nftsByCollection = Array.from(
-          nfts.reduce((acc, value) => {
-            acc.add(value.collectionAddress)
-            return acc
-          }, new Set<string>()),
-        )
-
-        if (nftsByCollection.length > 0) {
-          const nftRole = await profileContract.NFT_ROLE()
-          const collectionsNftRoleCalls = nftsByCollection.map((collectionAddress) => {
-            return {
-              address: profileContract.address,
-              name: 'hasRole',
-              params: [nftRole, collectionAddress],
-            }
-          })
-          const collectionRolesRaw = await multicall(profileABI, collectionsNftRoleCalls)
-          const collectionRoles = collectionRolesRaw.flat()
-          setUserProfileCreationNfts(
-            nfts.filter((nft) => collectionRoles[nftsByCollection.indexOf(nft.collectionAddress)]),
-          )
-        }
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    if (!isUserNftLoading) {
-      fetchUserPancakeCollectibles()
-    }
-  }, [nfts, profileContract, isUserNftLoading])
+  const { userProfileCreationNfts, isLoading: isUserProfileCreationNftsLoading } = useUserProfileCreationNfts()
 
   const { t } = useTranslation()
   const { toastSuccess } = useToast()
   const { fetchWithCatchTxError, loading: isApproving } = useCatchTxError()
   const { callWithGasPrice } = useCallWithGasPrice()
-  const { data: signer } = useSigner()
+  const { data: walletClient } = useWalletClient()
 
   const handleApprove = async () => {
-    const contract = getErc721Contract(selectedNft.collectionAddress, signer)
+    if (!walletClient) return
+
+    const contract = getErc721Contract(selectedNft.collectionAddress!, walletClient)
     const receipt = await fetchWithCatchTxError(() => {
-      return callWithGasPrice(contract, 'approve', [getPancakeProfileAddress(), selectedNft.tokenId])
+      return callWithGasPrice(contract, 'approve', [getPancakeProfileAddress(), BigInt(selectedNft.tokenId!)])
     })
     if (receipt?.status) {
       toastSuccess(t('Enabled'), t('Please progress to the next step.'))
@@ -96,7 +48,7 @@ const ProfilePicture: React.FC = () => {
     }
   }
 
-  if (userProfileCreationNfts?.length === 0) {
+  if (!userProfileCreationNfts?.length && !isUserProfileCreationNftsLoading) {
     return (
       <>
         <Heading scale="xl" mb="24px">
@@ -104,6 +56,12 @@ const ProfilePicture: React.FC = () => {
         </Heading>
         <Text bold fontSize="20px" mb="24px">
           {t('We couldn’t find any Pancake Collectibles in your wallet.')}
+        </Text>
+        <Text as="p" mb="24px">
+          {t('Only approved Pancake Collectibles can be used.')}
+          <Link to="/profile/pancake-collectibles" style={{ marginLeft: '4px' }}>
+            {t('See the list >')}
+          </Link>
         </Text>
         <Text as="p">
           {t(
@@ -132,12 +90,12 @@ const ProfilePicture: React.FC = () => {
           </Text>
           <Text as="p" color="textSubtle" mb="24px">
             {t('Only approved Pancake Collectibles can be used.')}
-            <Link to={`${nftsBaseUrl}/collections`} style={{ marginLeft: '4px' }}>
+            <Link to="/profile/pancake-collectibles" style={{ marginLeft: '4px' }}>
               {t('See the list >')}
             </Link>
           </Text>
           <NftWrapper>
-            {userProfileCreationNfts?.length > 0 ? (
+            {userProfileCreationNfts?.length ? (
               userProfileCreationNfts
                 .filter((walletNft) => walletNft.location === NftLocation.WALLET)
                 .map((walletNft) => {

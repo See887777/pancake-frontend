@@ -1,61 +1,65 @@
-import { FetchStatus } from 'config/constants/types'
+import { formatBigInt } from '@pancakeswap/utils/formatBalance'
+import { useQuery } from '@tanstack/react-query'
 import { getNftsMarketData, getNftsUpdatedMarketData } from 'state/nftMarket/helpers'
-import { formatBigNumber } from '@pancakeswap/utils/formatBalance'
 import { NftToken } from 'state/nftMarket/types'
-import useSWR from 'swr'
-import { isAddress } from 'utils'
+import { safeGetAddress } from 'utils'
+import { Address } from 'viem'
 import { pancakeBunniesAddress } from '../constants'
 
 export interface LowestNftPrice {
   isFetching: boolean
-  lowestPrice: number
+  lowestPrice?: number
 }
 
-const getBunnyIdFromNft = (nft: NftToken): string => {
+const getBunnyIdFromNft = (nft: NftToken): string | undefined => {
   const bunnyId = nft.attributes?.find((attr) => attr.traitType === 'bunnyId')?.value
-  return bunnyId ? bunnyId.toString() : null
+  return bunnyId ? bunnyId.toString() : undefined
 }
 
-export const getLowestUpdatedToken = async (collectionAddress: string, nftsMarketTokenIds: string[]) => {
-  const updatedMarketData = await getNftsUpdatedMarketData(collectionAddress.toLowerCase(), nftsMarketTokenIds)
+export const getLowestUpdatedToken = async (collectionAddress: Address, nftsMarketTokenIds: string[]) => {
+  const updatedMarketData = await getNftsUpdatedMarketData(collectionAddress, nftsMarketTokenIds)
 
   if (!updatedMarketData) return null
 
   return updatedMarketData
     .filter((tokenUpdatedPrice) => {
-      return tokenUpdatedPrice && tokenUpdatedPrice.currentAskPrice.gt(0) && tokenUpdatedPrice.isTradable
+      return tokenUpdatedPrice && tokenUpdatedPrice.currentAskPrice > 0 && tokenUpdatedPrice.isTradable
     })
     .sort((askInfoA, askInfoB) => {
-      return askInfoA.currentAskPrice.gt(askInfoB.currentAskPrice)
+      return askInfoA.currentAskPrice > askInfoB.currentAskPrice
         ? 1
-        : askInfoA.currentAskPrice.eq(askInfoB.currentAskPrice)
+        : askInfoA.currentAskPrice > askInfoB.currentAskPrice
         ? 0
         : -1
     })[0]
 }
 
 export const useGetLowestPriceFromBunnyId = (bunnyId?: string): LowestNftPrice => {
-  const { data, status } = useSWR(bunnyId ? ['bunnyLowestPrice', bunnyId] : null, async () => {
-    const response = await getNftsMarketData({ otherId: bunnyId, isTradable: true }, 100, 'currentAskPrice', 'asc')
+  const { data, status } = useQuery({
+    queryKey: ['bunnyLowestPrice', bunnyId],
+    queryFn: async () => {
+      const response = await getNftsMarketData({ otherId: bunnyId, isTradable: true }, 100, 'currentAskPrice', 'asc')
 
-    if (!response.length) return null
+      if (!response.length) return undefined
 
-    const nftsMarketTokenIds = response.map((marketData) => marketData.tokenId)
-    const lowestPriceUpdatedBunny = await getLowestUpdatedToken(pancakeBunniesAddress.toLowerCase(), nftsMarketTokenIds)
+      const nftsMarketTokenIds = response.map((marketData) => marketData.tokenId)
+      const lowestPriceUpdatedBunny = await getLowestUpdatedToken(pancakeBunniesAddress, nftsMarketTokenIds)
 
-    if (lowestPriceUpdatedBunny) {
-      return parseFloat(formatBigNumber(lowestPriceUpdatedBunny.currentAskPrice))
-    }
-    return null
+      if (lowestPriceUpdatedBunny) {
+        return parseFloat(formatBigInt(lowestPriceUpdatedBunny.currentAskPrice))
+      }
+      return undefined
+    },
+    enabled: Boolean(bunnyId),
   })
 
-  return { isFetching: status !== FetchStatus.Fetched, lowestPrice: data }
+  return { isFetching: status !== 'success', lowestPrice: data }
 }
 
-export const useGetLowestPriceFromNft = (nft: NftToken): LowestNftPrice => {
-  const isPancakeBunny = isAddress(nft.collectionAddress) === pancakeBunniesAddress
+export const useGetLowestPriceFromNft = (nft?: NftToken): LowestNftPrice => {
+  const isPancakeBunny = safeGetAddress(nft?.collectionAddress) === safeGetAddress(pancakeBunniesAddress)
 
-  const bunnyIdAttr = isPancakeBunny && getBunnyIdFromNft(nft)
+  const bunnyIdAttr = isPancakeBunny && nft ? getBunnyIdFromNft(nft) : undefined
 
   return useGetLowestPriceFromBunnyId(bunnyIdAttr)
 }

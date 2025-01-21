@@ -1,34 +1,35 @@
-import { useMemo } from 'react'
 import { Order } from '@gelatonetwork/limit-orders-lib'
 import { Currency, CurrencyAmount, Fraction, Token } from '@pancakeswap/sdk'
 import { useCurrency } from 'hooks/Tokens'
 import useGelatoLimitOrdersLib from 'hooks/limitOrders/useGelatoLimitOrdersLib'
-import { getBlockExploreLink } from 'utils'
-import { useIsTransactionPending } from 'state/transactions/hooks'
 import { useActiveChainId } from 'hooks/useActiveChainId'
-import getPriceForOneToken from '../utils/getPriceForOneToken'
+import { useMemo } from 'react'
+import { useIsTransactionPending } from 'state/transactions/hooks'
+import { getBlockExploreLink } from 'utils'
 import { LimitOrderStatus } from '../types'
+import getPriceForOneToken from '../utils/getPriceForOneToken'
 
 export interface FormattedOrderData {
-  inputToken: Currency | Token
-  outputToken: Currency | Token
-  inputAmount: string
-  outputAmount: string
-  executionPrice: string
-  invertedExecutionPrice: string
+  inputToken?: Currency | Token
+  outputToken?: Currency | Token
+  inputAmount?: string
+  outputAmount?: string
+  executionPrice?: string
+  invertedExecutionPrice?: string
   isOpen: boolean
   isCancelled: boolean
   isExecuted: boolean
+  isExpired: boolean
   isSubmissionPending: boolean
   isCancellationPending: boolean
   bscScanUrls: {
-    created: string
-    executed: string
-    cancelled: string
+    created: string | null
+    executed: string | null
+    cancelled: string | null
   }
 }
 
-const formatForDisplay = (amount: Fraction) => {
+const formatForDisplay = (amount?: Fraction) => {
   if (!amount) {
     return undefined
   }
@@ -42,8 +43,8 @@ const formatForDisplay = (amount: Fraction) => {
 const useFormattedOrderData = (order: Order): FormattedOrderData => {
   const { chainId } = useActiveChainId()
   const gelatoLibrary = useGelatoLimitOrdersLib()
-  const inputToken = useCurrency(order.inputToken)
-  const outputToken = useCurrency(order.outputToken)
+  const inputToken = useCurrency(order.inputToken) ?? undefined
+  const outputToken = useCurrency(order.outputToken) ?? undefined
 
   const isSubmissionPending = useIsTransactionPending(order.createdTxHash)
   const isCancellationPending = useIsTransactionPending(order.cancelledTxHash ?? undefined)
@@ -84,6 +85,7 @@ const useFormattedOrderData = (order: Order): FormattedOrderData => {
     isOpen: order.status === LimitOrderStatus.OPEN,
     isCancelled: order.status === LimitOrderStatus.CANCELLED,
     isExecuted: order.status === LimitOrderStatus.EXECUTED,
+    isExpired: order.isExpired && order.status === LimitOrderStatus.OPEN,
     isSubmissionPending,
     isCancellationPending,
     bscScanUrls: {

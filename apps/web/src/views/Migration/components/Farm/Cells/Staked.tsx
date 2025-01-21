@@ -1,12 +1,13 @@
-import React, { useMemo } from 'react'
-import styled from 'styled-components'
-import BigNumber from 'bignumber.js'
 import { Flex, Text, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
+import BigNumber from 'bignumber.js'
+import React, { useMemo } from 'react'
+import { styled } from 'styled-components'
+
 import { useTranslation } from '@pancakeswap/localization'
 import { formatLpBalance } from '@pancakeswap/utils/formatBalance'
-import BaseCell, { CellContent } from 'views/Pools/components/PoolsTable/Cells/BaseCell'
 
-const StyledCell = styled(BaseCell)`
+const StyledCell = styled(Pool.BaseCell)`
   flex: 0;
   padding: 0 0 24px 0;
   margin-left: 48px;
@@ -20,7 +21,6 @@ const StyledCell = styled(BaseCell)`
 
 export interface StakedProps {
   label: string
-  pid: number
   stakedBalance: BigNumber
 }
 
@@ -31,12 +31,12 @@ const Staked: React.FC<React.PropsWithChildren<StakedProps>> = ({ label, stakedB
   const labelText = t('%asset% Staked', { asset: label })
 
   const displayBalance = useMemo(() => {
-    return formatLpBalance(stakedBalance)
+    return formatLpBalance(stakedBalance, 18)
   }, [stakedBalance])
 
   return (
     <StyledCell role="cell">
-      <CellContent>
+      <Pool.CellContent>
         <Text fontSize="12px" color="textSubtle" textAlign="left">
           {labelText}
         </Text>
@@ -45,7 +45,7 @@ const Staked: React.FC<React.PropsWithChildren<StakedProps>> = ({ label, stakedB
             {displayBalance}
           </Text>
         </Flex>
-      </CellContent>
+      </Pool.CellContent>
     </StyledCell>
   )
 }

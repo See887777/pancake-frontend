@@ -1,10 +1,10 @@
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { useMemo } from 'react'
 import { Flex, Box, Text, Balance, SkeletonV2 } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import { usePriceCakeBusd } from 'state/farms/hooks'
+import { useCakePrice } from 'hooks/useCakePrice'
 import StakeToWinButton from 'views/Pottery/components/Banner/StakeToWinButton'
-import { BannerTimer, LockTimer } from 'views/Pottery/components/Timer'
+import { LockTimer } from 'views/Pottery/components/Timer'
 import { PotteryDepositStatus } from 'state/types'
 import { OutlineText, DarkTextStyle } from 'views/Pottery/components/TextStyle'
 import TicketsDecorations from 'views/Pottery/components/Banner/TicketsDecorations'
@@ -40,8 +40,8 @@ const Decorations = styled.div`
 const BannerBunny = styled.div`
   width: 221px;
   height: 348px;
-  margin: 63px auto auto auto;
   background: url(/images/pottery/banner-bunny.png);
+  margin: 63px auto auto auto;
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
@@ -70,17 +70,15 @@ interface BannerProps {
 
 const Banner: React.FC<React.PropsWithChildren<BannerProps>> = ({ handleScroll }) => {
   const { t } = useTranslation()
-  const cakePriceBusd = usePriceCakeBusd()
+  const cakePrice = useCakePrice()
   const { publicData } = usePotteryData()
   const { getLockedApy } = useVaultApy()
 
-  const prizeInBusd = publicData.totalPrize.times(cakePriceBusd)
+  const prizeInBusd = publicData.totalPrize.times(cakePrice)
   const prizeTotal = getBalanceNumber(prizeInBusd)
 
-  const apyDisplay = useMemo(() => {
-    const apy = getLockedApy(weeksToSeconds(10))
-    return !Number.isNaN(apy) ? `${Number(apy).toFixed(2)}%` : '0%'
-  }, [getLockedApy])
+  const apy = useMemo(() => Number(getLockedApy(weeksToSeconds(10))), [getLockedApy])
+  const apyDisplay = useMemo(() => (!Number.isNaN(apy) ? `${Number(apy).toFixed(2)}%` : '0%'), [apy])
 
   return (
     <PotteryBanner>
@@ -113,7 +111,6 @@ const Banner: React.FC<React.PropsWithChildren<BannerProps>> = ({ handleScroll }
           </Flex>
           <SkeletonV2
             isDataReady={Boolean(prizeTotal)}
-            width={['144px', '240px']}
             height={['60px', '97px']}
             wrapperProps={{ marginBottom: '8px' }}
           >
@@ -138,11 +135,18 @@ const Banner: React.FC<React.PropsWithChildren<BannerProps>> = ({ handleScroll }
             <Text color="white" bold as="span">
               {t('to earn')}
             </Text>
-            <DarkTextStyle m="0 3px" bold as="span">
-              {apyDisplay}
-            </DarkTextStyle>
+            <SkeletonV2
+              isDataReady={!!apy}
+              width={52}
+              height={24}
+              wrapperProps={{ marginLeft: '3px', display: 'inline-block', verticalAlign: 'text-top' }}
+            >
+              <DarkTextStyle bold as="span">
+                {apyDisplay}
+              </DarkTextStyle>
+            </SkeletonV2>
             <Text color="white" bold as="span">
-              {t('APY')}
+              {t('APR')}
             </Text>
           </Box>
           <Box>
@@ -153,7 +157,6 @@ const Banner: React.FC<React.PropsWithChildren<BannerProps>> = ({ handleScroll }
               {t('win prize pot!')}
             </DarkTextStyle>
           </Box>
-          <BannerTimer />
         </Flex>
       </Flex>
     </PotteryBanner>

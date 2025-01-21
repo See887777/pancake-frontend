@@ -1,73 +1,91 @@
-import { useCallback, useMemo } from 'react'
-import { ResponsiveContainer, XAxis, YAxis, Tooltip, AreaChart, Area, Dot } from 'recharts'
-import useTheme from 'hooks/useTheme'
-import { LineChartLoader } from 'views/Info/components/ChartLoaders'
 import { useTranslation } from '@pancakeswap/localization'
-import { laggyMiddleware, useSWRContract, useSWRMulticall } from 'hooks/useSWRContract'
-import useSWRImmutable from 'swr/immutable'
-import { useSWRConfig } from 'swr'
-import { useChainlinkOracleContract } from 'hooks/useContract'
-import { ChainlinkOracle } from 'config/abi/types'
-import chainlinkOracleAbi from 'config/abi/chainlinkOracle.json'
-import { formatBigNumberToFixed } from '@pancakeswap/utils/formatBalance'
-import { useGetRoundsByCloseOracleId, useGetSortedRounds } from 'state/predictions/hooks'
-import styled from 'styled-components'
-import { Flex, Text, FlexProps, FlexGap } from '@pancakeswap/uikit'
+import {
+  Flex,
+  FlexGap,
+  FlexProps,
+  Text,
+  additionalColors,
+  baseColors,
+  darkColors,
+  lightColors,
+} from '@pancakeswap/uikit'
+import { formatBigIntToFixed } from '@pancakeswap/utils/formatBalance'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { LineChartLoader } from 'components/ChartLoaders'
 import PairPriceDisplay from 'components/PairPriceDisplay'
+import { chainlinkOracleABI } from 'config/abi/chainlinkOracle'
+import dayjs from 'dayjs'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useChainlinkOracleContract } from 'hooks/useContract'
+import useTheme from 'hooks/useTheme'
+import { IChartApi, SeriesMarkerPosition, SeriesMarkerShape, UTCTimestamp, createChart } from 'lightweight-charts'
+import orderBy from 'lodash/orderBy'
+import { darken } from 'polished'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useGetRoundsByCloseOracleId, useGetSortedRounds } from 'state/predictions/hooks'
 import { NodeRound } from 'state/types'
-import useSwiper from '../hooks/useSwiper'
-import usePollOraclePrice from '../hooks/usePollOraclePrice'
-import { CHART_DOT_CLICK_EVENT } from '../helpers'
+import { styled } from 'styled-components'
+import { useReadContract, useReadContracts } from '@pancakeswap/wagmi'
 import { useConfig } from '../context/ConfigProvider'
+import { CHART_DOT_CLICK_EVENT } from '../helpers'
+import usePollOraclePrice from '../hooks/usePollOraclePrice'
+import useSwiper from '../hooks/useSwiper'
 
 function useChainlinkLatestRound() {
-  const { chainlinkOracleAddress } = useConfig()
-  const chainlinkOracleContract = useChainlinkOracleContract(chainlinkOracleAddress, false)
-  // Can refactor to subscription later
-  const lastRound = useSWRContract([chainlinkOracleContract, 'latestRound'], {
-    dedupingInterval: 10 * 1000,
-    refreshInterval: 10 * 1000,
-    compare: (a, b) => {
-      // check is equal
-      if (!a || !b) return false
-      return a.eq(b)
+  const config = useConfig()
+  const { chainId } = useActiveChainId()
+
+  const chainlinkOracleContract = useChainlinkOracleContract(config?.chainlinkOracleAddress)
+  const { data } = useReadContract({
+    abi: chainlinkOracleABI,
+    address: chainlinkOracleContract.address,
+    functionName: 'latestRound',
+    query: {
+      enabled: !!chainlinkOracleContract,
     },
+    chainId,
+    watch: true,
   })
 
-  return lastRound
+  return data
 }
 
 function useChainlinkRoundDataSet() {
+  const { chainId } = useActiveChainId()
   const lastRound = useChainlinkLatestRound()
-  const { chainlinkOracleAddress } = useConfig()
+  const config = useConfig()
+  const chainlinkOracleAddress = config?.chainlinkOracleAddress
 
-  const calls = useMemo(() => {
-    return lastRound.data
-      ? Array.from({ length: 50 }).map((_, i) => ({
-          address: chainlinkOracleAddress,
-          name: 'getRoundData',
-          params: [lastRound.data.sub(i)],
-        }))
-      : null
-  }, [lastRound.data, chainlinkOracleAddress])
-
-  const { data, error } = useSWRMulticall<Awaited<ReturnType<ChainlinkOracle['getRoundData']>>[]>(
-    chainlinkOracleAbi,
-    calls,
-    {
-      use: [laggyMiddleware],
+  const { data, error } = useReadContracts({
+    ...(lastRound &&
+      chainlinkOracleAddress && {
+        contracts: Array.from({ length: 50 }).map(
+          (_, i) =>
+            ({
+              chainId,
+              abi: chainlinkOracleABI,
+              address: chainlinkOracleAddress,
+              functionName: 'getRoundData',
+              args: [(lastRound ?? 0n) - BigInt(i)] as const,
+            } as const),
+        ),
+      }),
+    query: {
+      enabled: !!lastRound,
+      placeholderData: keepPreviousData,
     },
-  )
+  })
 
   const computedData: ChartData[] = useMemo(() => {
     return (
       data
-        ?.filter((d) => !!d && d.answer.gt(0))
-        .map(({ answer, roundId, startedAt }) => {
+        ?.filter((d) => !!d && d.status === 'success' && d.result[1] > 0n)
+        ?.map(({ result }) => {
+          // roundId = 0, answer = 1, startedAt = 2
           return {
-            answer: formatBigNumberToFixed(answer, 4, 8),
-            roundId: roundId.toString(),
-            startedAt: startedAt.toNumber(),
+            answer: formatBigIntToFixed(result?.[1] ?? 0n, 4, 8),
+            roundId: result?.[0]?.toString() ?? '0',
+            startedAt: Number(result?.[2]),
           }
         }) ?? []
     )
@@ -83,24 +101,32 @@ type ChartData = {
 }
 
 function useChartHover() {
-  const { data } = useSWRImmutable<ChartData>('chainlinkChartHover')
+  const { data } = useQuery<ChartData>({
+    queryKey: ['chainlinkChartHover'],
+    enabled: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  })
   return data
 }
 
 function useChartHoverMutate() {
-  const { mutate } = useSWRConfig()
+  const queryClient = useQueryClient()
 
   const updateHover = useCallback(
     (data) => {
-      mutate('chainlinkChartHover', data)
+      if (data) {
+        queryClient.setQueryData(['chainlinkChartHover'], data)
+      } else {
+        queryClient.resetQueries({ queryKey: ['chainlinkChartHover'] })
+      }
     },
-    [mutate],
+    [queryClient],
   )
 
   return updateHover
 }
-
-const chartColor = { gradient1: '#00E7B0', gradient2: '#0C8B6C', stroke: '#31D0AA' }
 
 const ChainlinkChartWrapper = styled(Flex)<{ isMobile?: boolean }>`
   flex-direction: column;
@@ -111,26 +137,27 @@ const ChainlinkChartWrapper = styled(Flex)<{ isMobile?: boolean }>`
 
 const HoverData = ({ rounds }: { rounds: { [key: string]: NodeRound } }) => {
   const hoverData = useChartHover()
-  const { price: answerAsBigNumber } = usePollOraclePrice()
+  const config = useConfig()
+  const { price: answerAsBigNumber } = usePollOraclePrice({ chainlinkOracleAddress: config?.chainlinkOracleAddress })
   const {
     t,
     currentLanguage: { locale },
   } = useTranslation()
-  const { token } = useConfig()
 
   return (
     <PairPriceDisplay
       width="100%"
-      value={hoverData ? hoverData.answer : formatBigNumberToFixed(answerAsBigNumber, 4, 8)}
-      inputSymbol={token.symbol}
+      value={hoverData ? hoverData.answer : formatBigIntToFixed(answerAsBigNumber, 4, 8)}
+      inputSymbol={config?.token?.symbol}
       outputSymbol="USD"
       format={false}
       flexWrap="wrap"
       alignItems="center"
       columnGap="12px"
+      zIndex={2}
     >
       {hoverData && (
-        <FlexGap minWidth="51%" alignItems="flex-end" gap="12px" height="22px">
+        <FlexGap minWidth="51%" alignItems="center" gap="12px" height="22px">
           <Text color="textSubtle" lineHeight={1.1}>
             {new Date(hoverData.startedAt * 1000).toLocaleString(locale, {
               year: 'numeric',
@@ -168,13 +195,11 @@ const ChainLinkChart = (props: FlexProps & { isMobile?: boolean }) => {
         alignItems="center"
         flexWrap="wrap"
         columnGap="12px"
-        height={['56px', , , , '44px']}
+        height={['56px', '0', '0', '0', '44px']}
       >
-        <HoverData rounds={rounds} />
+        {rounds && <HoverData rounds={rounds} />}
       </FlexGap>
-      <Flex height={[`calc(100% - 56px)`]}>
-        <Chart rounds={rounds} data={data} />
-      </Flex>
+      <Flex height={[`calc(100% - 56px)`]}>{rounds && <Chart rounds={rounds} data={data} />}</Flex>
     </ChainlinkChartWrapper>
   )
 }
@@ -194,116 +219,155 @@ const Chart = ({
   const {
     currentLanguage: { locale },
   } = useTranslation()
-  const { isDark, theme } = useTheme()
+  const { isDark } = useTheme()
   const mutate = useChartHoverMutate()
-
-  return (
-    <ResponsiveContainer>
-      <AreaChart
-        data={data}
-        margin={{
-          top: 20,
-          right: 0,
-          left: 0,
-          bottom: 5,
-        }}
-        onMouseLeave={() => {
-          mutate(undefined)
-        }}
-      >
-        <defs>
-          <linearGradient id="gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={chartColor.gradient1} stopOpacity={0.34} />
-            <stop offset="100%" stopColor={chartColor.gradient2} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <XAxis
-          dataKey="startedAt"
-          tickFormatter={(time) => {
-            return new Date(time * 1000).toLocaleString(locale, {
-              hour: 'numeric',
-              minute: '2-digit',
-              hourCycle: 'h24',
-            })
-          }}
-          color={theme.colors.text}
-          fontSize="12px"
-          minTickGap={8}
-          reversed
-          tick={{ fill: theme.colors.text }}
-        />
-        <XAxis dataKey="roundId" hide />
-        <YAxis
-          dataKey="answer"
-          tickCount={6}
-          scale="linear"
-          color={theme.colors.textSubtle}
-          fontSize="12px"
-          domain={['auto', 'auto']}
-          orientation="right"
-          tick={{ dx: 10, fill: theme.colors.textSubtle }}
-        />
-        <Tooltip
-          cursor={{ stroke: theme.colors.textSubtle, strokeDasharray: '3 3' }}
-          contentStyle={{ display: 'none' }}
-          formatter={(tooltipValue, name, props) => {
-            mutate(props.payload)
-            return null
-          }}
-        />
-        <Area
-          dataKey="answer"
-          type="linear"
-          stroke={chartColor.stroke}
-          fill="url(#gradient)"
-          strokeWidth={2}
-          activeDot={(props) => {
-            if (rounds[props.payload.roundId]) {
-              return <ActiveDot {...props} />
-            }
-            return null
-          }}
-          dot={(props) => {
-            if (rounds[props.payload.roundId]) {
-              return (
-                <Dot
-                  {...props}
-                  r={4}
-                  fill={isDark ? theme.colors.gold : theme.colors.secondary}
-                  fillOpacity={1}
-                  strokeWidth={0}
-                />
-              )
-            }
-            return null
-          }}
-        />
-      </AreaChart>
-    </ResponsiveContainer>
-  )
-}
-
-const ActiveDot = (props) => {
-  const { swiper } = useSwiper()
+  const transformedData = useMemo(() => {
+    return orderBy(
+      data?.map(({ startedAt, answer }) => {
+        return { time: startedAt as UTCTimestamp, value: parseFloat(answer) }
+      }) || [],
+      'time',
+      'asc',
+    )
+  }, [data])
   const sortedRounds = useGetSortedRounds()
-  const { theme } = useTheme()
+  const { swiper } = useSwiper()
 
-  return (
-    <Dot
-      {...props}
-      r={12}
-      stroke={theme.colors.primary}
-      strokeWidth={10}
-      fill={theme.colors.background}
-      style={{ cursor: 'pointer' }}
-      onClick={() => {
-        const roundIndex = sortedRounds.findIndex((round) => round.closeOracleId === props.payload.roundId)
-        if (roundIndex >= 0 && swiper) {
+  const chartRef = useRef<HTMLDivElement>(null)
+  const [chartCreated, setChart] = useState<IChartApi | undefined>()
+
+  useEffect(() => {
+    if (!chartRef?.current) return
+
+    const chart = createChart(chartRef?.current, {
+      layout: {
+        background: { color: 'transparent' },
+        textColor: isDark ? darkColors.secondary : lightColors.secondary,
+      },
+      autoSize: true,
+      handleScale: false,
+      handleScroll: false,
+      rightPriceScale: {
+        scaleMargins: {
+          top: 0.001,
+          bottom: 0.001,
+        },
+        borderVisible: false,
+      },
+      timeScale: {
+        visible: true,
+        borderVisible: false,
+        secondsVisible: false,
+        fixRightEdge: true,
+        fixLeftEdge: true,
+        tickMarkFormatter: (unixTime: number) => {
+          return dayjs.unix(unixTime).format('h:mm a')
+        },
+      },
+      grid: {
+        horzLines: {
+          visible: false,
+        },
+        vertLines: {
+          visible: false,
+        },
+      },
+      crosshair: {
+        horzLine: {
+          visible: true,
+          labelVisible: true,
+        },
+        mode: 1,
+        vertLine: {
+          visible: true,
+          labelVisible: false,
+          style: 3,
+          width: 1,
+          color: isDark ? darkColors.textSubtle : lightColors.textSubtle,
+        },
+      },
+    })
+
+    const newSeries = chart.addAreaSeries({
+      lineWidth: 2,
+      lineColor: baseColors.primary,
+      topColor: darken(0.01, baseColors.primary),
+      bottomColor: isDark ? darkColors.backgroundDisabled : lightColors.backgroundDisabled,
+      priceFormat: {
+        type: 'price',
+        precision: 4,
+        minMove: 0.0001,
+      },
+    })
+    setChart(chart)
+
+    const markers = orderBy(
+      data
+        .filter((chartData) => chartData.roundId in rounds)
+        .map((chartData) => ({
+          time: chartData.startedAt as UTCTimestamp,
+          roundId: chartData.roundId,
+          position: 'inBar' as SeriesMarkerPosition,
+          color: isDark ? additionalColors.gold : additionalColors.overlay,
+          shape: 'circle' as SeriesMarkerShape,
+          size: 0.5,
+        })),
+      'time',
+      'asc',
+    )
+
+    newSeries.setData(transformedData)
+    newSeries.setMarkers(markers)
+
+    const crossHairHandler = (param) => {
+      if (newSeries && param) {
+        const timestamp = param.time as number
+        if (!timestamp) return
+        const hoveredRound = data.find((round) => round.startedAt === timestamp)
+        mutate(hoveredRound)
+      } else {
+        mutate(undefined)
+      }
+    }
+    chart.subscribeCrosshairMove(crossHairHandler)
+
+    const clickHandler = (param) => {
+      if (swiper && param?.seriesData) {
+        const seriesMarkers = param?.seriesData?.keys?.()?.next?.()?.value?.markers?.()
+        const clickedMarker = seriesMarkers?.find((marker) => marker.time === param.time)
+        const roundIndex =
+          (clickedMarker &&
+            sortedRounds?.findIndex((round) =>
+              'roundId' in clickedMarker ? round.closeOracleId === clickedMarker.roundId : false,
+            )) ??
+          -1
+        if (roundIndex >= 0) {
           swiper.slideTo(roundIndex)
           swiper.el.dispatchEvent(new Event(CHART_DOT_CLICK_EVENT))
         }
-      }}
-    />
+      }
+    }
+    chart.subscribeClick(clickHandler)
+
+    // eslint-disable-next-line consistent-return
+    return () => {
+      chart.unsubscribeClick(clickHandler)
+      chart.unsubscribeCrosshairMove(crossHairHandler)
+      chart.remove()
+    }
+  }, [transformedData, isDark, locale, mutate, data, rounds, swiper, sortedRounds])
+
+  const handleMouseLeave = useCallback(() => {
+    mutate(undefined)
+  }, [mutate])
+
+  return (
+    <>
+      {!chartCreated && <LineChartLoader />}
+      <div style={{ display: 'flex', flex: 1, height: '100%' }} onMouseLeave={handleMouseLeave}>
+        <div style={{ flex: 1, maxWidth: '100%' }} ref={chartRef} id="chartlink-line-chart" />
+      </div>
+    </>
   )
 }
 

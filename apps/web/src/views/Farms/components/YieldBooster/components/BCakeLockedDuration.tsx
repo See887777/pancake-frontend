@@ -1,9 +1,10 @@
 import { useTranslation } from '@pancakeswap/localization'
+import { MAX_LOCK_DURATION } from '@pancakeswap/pools'
 import { Box, Button, Flex, Input, Message, MessageText, Text } from '@pancakeswap/uikit'
-import { MAX_LOCK_DURATION } from 'config/constants/pools'
+
 import _toNumber from 'lodash/toNumber'
 import { useMemo } from 'react'
-import styled, { useTheme } from 'styled-components'
+import { styled, useTheme } from 'styled-components'
 import { secondsToWeeks, weeksToSeconds } from 'views/Pools/components/utils/formatSecondsToWeeks'
 
 const DURATIONS = [1, 5, 10, 25, 52]
@@ -18,7 +19,7 @@ interface LockDurationFieldProps {
   duration: number
   setDuration: (duration: number) => void
   isOverMax: boolean
-  currentDuration?: number
+  currentDuration: number
   currentDurationLeft?: number
 }
 

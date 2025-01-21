@@ -1,7 +1,8 @@
-import { ReactElement, createContext, useMemo, memo } from 'react'
 import _noop from 'lodash/noop'
+import { ReactElement, createContext, memo, useMemo } from 'react'
+import { Address } from 'viem'
 
-import { FarmWithStakedValue } from '../../types'
+import { FarmWithStakedValue } from '@pancakeswap/farms'
 import useYieldBoosterState, { YieldBoosterState } from '../hooks/useYieldBoosterState'
 
 interface ProxyFarmContainerPropsType {
@@ -15,7 +16,7 @@ export const YieldBoosterStateContext = createContext({
   proxyFarm: {},
   shouldUseProxyFarm: false,
   refreshProxyAddress: _noop,
-  proxyAddress: '',
+  proxyAddress: undefined as Address | undefined,
 })
 
 const ProxyFarmContainer: React.FC<ProxyFarmContainerPropsType> = ({ children, farm }) => {
@@ -32,18 +33,16 @@ const ProxyFarmContainer: React.FC<ProxyFarmContainerPropsType> = ({ children, f
   const proxyFarm = useMemo(
     () => ({
       ...farm,
-      userData: farm.userData.proxy,
+      userData: farm.userData?.proxy,
     }),
     [farm],
   )
 
-  return (
-    <YieldBoosterStateContext.Provider
-      value={{ proxyAddress, boosterState, refreshActivePool, refreshProxyAddress, proxyFarm, shouldUseProxyFarm }}
-    >
-      {children}
-    </YieldBoosterStateContext.Provider>
-  )
+  const providerValue = useMemo(() => {
+    return { proxyAddress, boosterState, refreshActivePool, refreshProxyAddress, proxyFarm, shouldUseProxyFarm }
+  }, [proxyAddress, boosterState, refreshActivePool, refreshProxyAddress, proxyFarm, shouldUseProxyFarm])
+
+  return <YieldBoosterStateContext.Provider value={providerValue}>{children}</YieldBoosterStateContext.Provider>
 }
 
 export default memo(ProxyFarmContainer)

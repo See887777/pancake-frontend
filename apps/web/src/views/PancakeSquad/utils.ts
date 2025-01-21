@@ -1,7 +1,7 @@
-import { EventStatus } from '@pancakeswap/uikit'
 import { ContextApi } from '@pancakeswap/localization'
+import { EventStatus } from '@pancakeswap/uikit'
+import getTimePeriods from '@pancakeswap/utils/getTimePeriods'
 import formatTimePeriod from 'utils/formatTimePeriod'
-import getTimePeriods from 'utils/getTimePeriods'
 import { SaleStatusEnum, UserStatusEnum } from './types'
 
 type getUserStatusType = {
@@ -60,9 +60,9 @@ const eventTextMapping = (t: ContextApi['t'], saleStatus: SaleStatusEnum) => {
     case SaleStatusEnum.Presale:
       return t('Presale')
     case SaleStatusEnum.Sale:
-      return t('Public Sale')
+      return t('Public IFO')
     case SaleStatusEnum.DrawingRandomness:
-      return t('Public Sale')
+      return t('Public IFO')
     case SaleStatusEnum.Claim:
       return t('Claim Phase')
     default:

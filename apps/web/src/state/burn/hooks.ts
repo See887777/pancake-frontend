@@ -1,27 +1,19 @@
-import { Currency, CurrencyAmount, JSBI, Pair, Percent, Token } from '@pancakeswap/sdk'
+import { Currency, CurrencyAmount, Pair, Percent, Token } from '@pancakeswap/sdk'
 import { useCallback, useMemo } from 'react'
-import { useSelector } from 'react-redux'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
 import { wrappedCurrency } from 'utils/wrappedCurrency'
-import { usePair } from 'hooks/usePairs'
+import { useV2Pair } from 'hooks/usePairs'
 import useTotalSupply from 'hooks/useTotalSupply'
 
 import { useTranslation } from '@pancakeswap/localization'
 import tryParseAmount from '@pancakeswap/utils/tryParseAmount'
-import { AppState, useAppDispatch } from '../index'
+import { useRemoveLiquidityV2FormDispatch, useRemoveLiquidityV2FormState } from 'state/burn/reducer'
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
 import { useTokenBalances } from '../wallet/hooks'
 import { Field, typeInput } from './actions'
-
-export function useBurnState(): AppState['burn'] {
-  return useSelector<AppState, AppState['burn']>((state) => state.burn)
-}
 
 export function useDerivedBurnInfo(
   currencyA: Currency | undefined,
   currencyB: Currency | undefined,
-  removalCheckedA?: boolean,
-  removalCheckedB?: boolean,
-  zapMode?: boolean,
 ): {
   pair?: Pair | null
   parsedAmounts: {
@@ -34,14 +26,14 @@ export function useDerivedBurnInfo(
   tokenToReceive?: string
   estimateZapOutAmount?: CurrencyAmount<Token>
 } {
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
 
-  const { independentField, typedValue } = useBurnState()
+  const { independentField, typedValue } = useRemoveLiquidityV2FormState()
 
   const { t } = useTranslation()
 
   // pair + totalsupply
-  const [, pair] = usePair(currencyA, currencyB)
+  const [, pair] = useV2Pair(currencyA, currencyB)
 
   // balances
   const relevantTokenBalances = useTokenBalances(
@@ -60,22 +52,12 @@ export function useDerivedBurnInfo(
   // liquidity values
   const totalSupply = useTotalSupply(pair?.liquidityToken)
   const liquidityValueA =
-    pair &&
-    totalSupply &&
-    userLiquidity &&
-    tokenA &&
-    // this condition is a short-circuit in the case where useTokenBalance updates sooner than useTotalSupply
-    JSBI.greaterThanOrEqual(totalSupply.quotient, userLiquidity.quotient)
+    pair && totalSupply && userLiquidity && tokenA && totalSupply.quotient >= userLiquidity.quotient
       ? CurrencyAmount.fromRawAmount(tokenA, pair.getLiquidityValue(tokenA, totalSupply, userLiquidity, false).quotient)
       : undefined
 
   const liquidityValueB =
-    pair &&
-    totalSupply &&
-    userLiquidity &&
-    tokenB &&
-    // this condition is a short-circuit in the case where useTokenBalance updates sooner than useTotalSupply
-    JSBI.greaterThanOrEqual(totalSupply.quotient, userLiquidity.quotient)
+    pair && totalSupply && userLiquidity && tokenB && totalSupply.quotient >= userLiquidity.quotient
       ? CurrencyAmount.fromRawAmount(tokenB, pair.getLiquidityValue(tokenB, totalSupply, userLiquidity, false).quotient)
       : undefined
   const liquidityValues: { [Field.CURRENCY_A]?: CurrencyAmount<Token>; [Field.CURRENCY_B]?: CurrencyAmount<Token> } = {
@@ -111,13 +93,6 @@ export function useDerivedBurnInfo(
       ? CurrencyAmount.fromRawAmount(userLiquidity.currency, percentToRemove.multiply(userLiquidity.quotient).quotient)
       : undefined
 
-  const tokenToReceive =
-    removalCheckedA && removalCheckedB
-      ? undefined
-      : removalCheckedA
-      ? tokens[Field.CURRENCY_A]?.address
-      : tokens[Field.CURRENCY_B]?.address
-
   const amountA =
     tokenA && percentToRemove && percentToRemove.greaterThan('0') && liquidityValueA
       ? CurrencyAmount.fromRawAmount(tokenA, percentToRemove.multiply(liquidityValueA.quotient).quotient)
@@ -128,19 +103,6 @@ export function useDerivedBurnInfo(
       ? CurrencyAmount.fromRawAmount(tokenB, percentToRemove.multiply(liquidityValueB.quotient).quotient)
       : undefined
 
-  const tokenAmountToZap = removalCheckedA && removalCheckedB ? undefined : removalCheckedA ? amountB : amountA
-
-  const estimateZapOutAmount = useMemo(() => {
-    if (pair && tokenAmountToZap) {
-      try {
-        return pair.getOutputAmount(tokenAmountToZap)[0]
-      } catch (error) {
-        return undefined
-      }
-    }
-    return undefined
-  }, [pair, tokenAmountToZap])
-
   const parsedAmounts: {
     [Field.LIQUIDITY_PERCENT]: Percent
     [Field.LIQUIDITY]?: CurrencyAmount<Token>
@@ -149,26 +111,8 @@ export function useDerivedBurnInfo(
   } = {
     [Field.LIQUIDITY_PERCENT]: percentToRemove,
     [Field.LIQUIDITY]: liquidityToRemove,
-    [Field.CURRENCY_A]: !zapMode
-      ? amountA
-      : amountA && removalCheckedA && !removalCheckedB && estimateZapOutAmount
-      ? CurrencyAmount.fromRawAmount(
-          tokenA,
-          JSBI.add(percentToRemove.multiply(liquidityValueA.quotient).quotient, estimateZapOutAmount.quotient),
-        )
-      : !removalCheckedA
-      ? undefined
-      : amountA,
-    [Field.CURRENCY_B]: !zapMode
-      ? amountB
-      : amountB && removalCheckedB && !removalCheckedA && estimateZapOutAmount
-      ? CurrencyAmount.fromRawAmount(
-          tokenB,
-          JSBI.add(percentToRemove.multiply(liquidityValueB.quotient).quotient, estimateZapOutAmount.quotient),
-        )
-      : !removalCheckedB
-      ? undefined
-      : amountB,
+    [Field.CURRENCY_A]: amountA,
+    [Field.CURRENCY_B]: amountB,
   }
 
   let error: string | undefined
@@ -176,21 +120,17 @@ export function useDerivedBurnInfo(
     error = t('Connect Wallet')
   }
 
-  if (
-    !parsedAmounts[Field.LIQUIDITY] ||
-    (removalCheckedA && !parsedAmounts[Field.CURRENCY_A]) ||
-    (removalCheckedB && !parsedAmounts[Field.CURRENCY_B])
-  ) {
+  if (!parsedAmounts[Field.LIQUIDITY] || !parsedAmounts[Field.CURRENCY_A] || !parsedAmounts[Field.CURRENCY_B]) {
     error = error ?? t('Enter an amount')
   }
 
-  return { pair, parsedAmounts, error, tokenToReceive, estimateZapOutAmount }
+  return { pair, parsedAmounts, error }
 }
 
 export function useBurnActionHandlers(): {
   onUserInput: (field: Field, typedValue: string) => void
 } {
-  const dispatch = useAppDispatch()
+  const dispatch = useRemoveLiquidityV2FormDispatch()
 
   const onUserInput = useCallback(
     (field: Field, typedValue: string) => {

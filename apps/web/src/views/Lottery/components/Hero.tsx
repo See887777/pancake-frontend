@@ -1,14 +1,14 @@
-import styled, { keyframes } from 'styled-components'
-import { Box, Flex, Heading, Skeleton, Balance } from '@pancakeswap/uikit'
-import { LotteryStatus } from 'config/constants/types'
 import { useTranslation } from '@pancakeswap/localization'
-import { usePriceCakeBusd } from 'state/farms/hooks'
-import { useLottery } from 'state/lottery/hooks'
+import { Balance, Box, Flex, Heading, Skeleton } from '@pancakeswap/uikit'
 import { getBalanceNumber } from '@pancakeswap/utils/formatBalance'
+import { LotteryStatus } from 'config/constants/types'
+import { useCakePrice } from 'hooks/useCakePrice'
+import { useLottery } from 'state/lottery/hooks'
+import { keyframes, styled } from 'styled-components'
 import { TicketPurchaseCard } from '../svgs'
 import BuyTicketsButton from './BuyTicketsButton'
 
-const floatingStarsLeft = keyframes`
+export const floatingStarsLeft = keyframes`
   from {
     transform: translate(0,  0px);
   }
@@ -20,7 +20,7 @@ const floatingStarsLeft = keyframes`
   }
 `
 
-const floatingStarsRight = keyframes`
+export const floatingStarsRight = keyframes`
   from {
     transform: translate(0,  0px);
   }
@@ -217,8 +217,8 @@ const Hero = () => {
     isTransitioning,
   } = useLottery()
 
-  const cakePriceBusd = usePriceCakeBusd()
-  const prizeInBusd = amountCollectedInCake.times(cakePriceBusd)
+  const cakePrice = useCakePrice()
+  const prizeInBusd = amountCollectedInCake.times(cakePrice)
   const prizeTotal = getBalanceNumber(prizeInBusd)
   const ticketBuyIsDisabled = status !== LotteryStatus.OPEN || isTransitioning
 
@@ -232,7 +232,7 @@ const Hero = () => {
             <PrizeTotalBalance fontSize="64px" bold prefix="$" value={prizeTotal} mb="8px" decimals={0} />
           )}
           <Heading mb="32px" scale="lg" color="#ffffff">
-            {t('in prizes!')}
+            {t('in Prizes!')}
           </Heading>
         </>
       )
@@ -254,7 +254,7 @@ const Hero = () => {
         <img src="/images/lottery/ticket-l.png" width="123px" height="83px" alt="" />
         <img src="/images/lottery/ticket-r.png" width="121px" height="72px" alt="" />
       </StarsDecorations>
-      <Heading mb="8px" scale="md" color="#ffffff" id="lottery-hero-title">
+      <Heading style={{ zIndex: 1 }} mb="8px" scale="md" color="#ffffff" id="lottery-hero-title">
         {t('The PancakeSwap Lottery')}
       </Heading>
       {getHeroHeading()}

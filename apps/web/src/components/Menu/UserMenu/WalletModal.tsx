@@ -1,4 +1,4 @@
-import { parseUnits } from '@ethersproject/units'
+import { useTranslation } from '@pancakeswap/localization'
 import {
   ButtonMenu,
   ButtonMenuItem,
@@ -7,14 +7,14 @@ import {
   IconButton,
   InjectedModalProps,
   ModalBody,
-  ModalContainer,
-  ModalHeader as UIKitModalHeader,
   ModalTitle,
+  ModalWrapper,
+  ModalHeader as UIKitModalHeader,
 } from '@pancakeswap/uikit'
+import { useCallback, useState } from 'react'
+import { styled } from 'styled-components'
+import { parseEther } from 'viem'
 import { useAccount, useBalance } from 'wagmi'
-import { useState } from 'react'
-import { useTranslation } from '@pancakeswap/localization'
-import styled from 'styled-components'
 import WalletInfo from './WalletInfo'
 import WalletTransactions from './WalletTransactions'
 import WalletWrongNetwork from './WalletWrongNetwork'
@@ -29,7 +29,7 @@ interface WalletModalProps extends InjectedModalProps {
   initialView?: WalletView
 }
 
-export const LOW_NATIVE_BALANCE = parseUnits('0.002', 'ether')
+export const LOW_NATIVE_BALANCE = parseEther('0.002', 'wei')
 
 const ModalHeader = styled(UIKitModalHeader)`
   background: ${({ theme }) => theme.colors.gradientBubblegum};
@@ -41,21 +41,15 @@ const Tabs = styled.div`
   padding: 16px 24px;
 `
 
-const WalletModal: React.FC<React.PropsWithChildren<WalletModalProps>> = ({
-  initialView = WalletView.WALLET_INFO,
-  onDismiss,
-}) => {
-  const [view, setView] = useState(initialView)
+interface TabsComponentProps {
+  view: WalletView
+  handleClick: (newIndex: number) => void
+}
+
+const TabsComponent: React.FC<React.PropsWithChildren<TabsComponentProps>> = ({ view, handleClick }) => {
   const { t } = useTranslation()
-  const { address: account } = useAccount()
-  const { data, isFetched } = useBalance({ addressOrName: account })
-  const hasLowNativeBalance = isFetched && data && data.value.lte(LOW_NATIVE_BALANCE)
 
-  const handleClick = (newIndex: number) => {
-    setView(newIndex)
-  }
-
-  const TabsComponent: React.FC<React.PropsWithChildren> = () => (
+  return (
     <Tabs>
       <ButtonMenu scale="sm" variant="subtle" onItemClick={handleClick} activeIndex={view} fullWidth>
         <ButtonMenuItem>{t('Wallet')}</ButtonMenuItem>
@@ -63,9 +57,24 @@ const WalletModal: React.FC<React.PropsWithChildren<WalletModalProps>> = ({
       </ButtonMenu>
     </Tabs>
   )
+}
+
+const WalletModal: React.FC<React.PropsWithChildren<WalletModalProps>> = ({
+  initialView = WalletView.WALLET_INFO,
+  onDismiss,
+}) => {
+  const [view, setView] = useState(initialView)
+  const { t } = useTranslation()
+  const { address: account } = useAccount()
+  const { data, isFetched } = useBalance({ address: account })
+  const hasLowNativeBalance = Boolean(isFetched && data && data.value <= LOW_NATIVE_BALANCE)
+
+  const handleClick = useCallback((newIndex: number) => {
+    setView(newIndex)
+  }, [])
 
   return (
-    <ModalContainer title={t('Welcome!')} $minWidth="360px">
+    <ModalWrapper minWidth="360px">
       <ModalHeader>
         <ModalTitle>
           <Heading>{t('Your Wallet')}</Heading>
@@ -74,15 +83,15 @@ const WalletModal: React.FC<React.PropsWithChildren<WalletModalProps>> = ({
           <CloseIcon width="24px" color="text" />
         </IconButton>
       </ModalHeader>
-      {view !== WalletView.WRONG_NETWORK && <TabsComponent />}
+      {view !== WalletView.WRONG_NETWORK && <TabsComponent view={view} handleClick={handleClick} />}
       <ModalBody p="24px" width="100%">
         {view === WalletView.WALLET_INFO && (
           <WalletInfo hasLowNativeBalance={hasLowNativeBalance} switchView={handleClick} onDismiss={onDismiss} />
         )}
-        {view === WalletView.TRANSACTIONS && <WalletTransactions onDismiss={onDismiss} />}
-        {view === WalletView.WRONG_NETWORK && <WalletWrongNetwork onDismiss={onDismiss} />}
+        {view === WalletView.TRANSACTIONS && !!onDismiss && <WalletTransactions onDismiss={onDismiss} />}
+        {view === WalletView.WRONG_NETWORK && !!onDismiss && <WalletWrongNetwork onDismiss={onDismiss} />}
       </ModalBody>
-    </ModalContainer>
+    </ModalWrapper>
   )
 }
 

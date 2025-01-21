@@ -1,53 +1,86 @@
 /* eslint-disable camelcase */
 import { FetchTableItemArgs, fetchTableItem } from '@pancakeswap/awgmi/core'
-import { Types } from 'aptos'
+import { QueryFunction, useQueries, useQuery } from '@tanstack/react-query'
+import { MoveResource } from '@aptos-labs/ts-sdk'
+import { useMemo } from 'react'
 
-import { QueryConfig, QueryFunctionArgs } from '../types'
+import { QueryConfig } from '../types'
 import { useNetwork } from './useNetwork'
-import { useQuery } from './utils/useQuery'
 
-export type FetchTableItemResult = Types.MoveResource[]
+export type FetchTableItemResult = MoveResource[]
 
-export type UseTableItemConfig<TData = unknown> = QueryConfig<FetchTableItemResult, Error, TData>
+export type UseTableItemConfig<TData = unknown> = QueryConfig<FetchTableItemResult, Error, TData, QueryKey>
+
+type QueryKey = ReturnType<typeof queryKey>
 
 export const queryKey = (params: { networkName?: string } & Partial<FetchTableItemArgs>) =>
   [{ entity: 'tableItem', ...params }] as const
 
-const queryFn = ({ queryKey: [{ networkName, handle, data }] }: QueryFunctionArgs<typeof queryKey>) => {
+const queryFn: QueryFunction<FetchTableItemResult, QueryKey> = ({
+  queryKey: [{ networkName, handle, data }],
+}): Promise<FetchTableItemResult> => {
   if (!handle || !data) throw new Error('Handle and data are required.')
 
   return fetchTableItem({ networkName, handle, data })
 }
 
+export type PayloadTableItem = {
+  keyType: string
+  valueType: string
+  key: any
+}
+
+export function useTableItems({
+  handles,
+  data: data_,
+  networkName: networkName_,
+}: {
+  handles?: string[]
+  data?: PayloadTableItem[]
+  networkName?: string
+}) {
+  const { chain } = useNetwork()
+
+  return useQueries({
+    queries: useMemo(
+      () =>
+        handles?.length && data_?.length
+          ? handles.map((handle, idx) => ({
+              handle,
+              queryFn,
+              queryKey: queryKey({ networkName: networkName_ ?? chain?.network, handle, data: data_[idx] }),
+              staleTime: Infinity,
+              refetchInterval: 3_000,
+            }))
+          : [],
+      [chain?.network, handles, networkName_, data_],
+    ),
+  })
+}
+
 export function useTableItem<TData = unknown>({
-  cacheTime,
-  keepPreviousData,
+  gcTime,
   enabled = true,
   networkName: networkName_,
   staleTime,
-  suspense,
-  onError,
-  onSettled,
-  onSuccess,
   select,
   handle,
   data: data_,
+  ...query
 }: Partial<FetchTableItemArgs> & UseTableItemConfig<TData>) {
   const { chain } = useNetwork()
 
-  return useQuery(queryKey({ networkName: networkName_ ?? chain?.network, handle, data: data_ }), queryFn, {
-    cacheTime,
+  return useQuery({
+    ...query,
+    gcTime,
+    queryKey: queryKey({ networkName: networkName_ ?? chain?.network, handle, data: data_ }),
+    queryFn,
     enabled: enabled && !!handle && !!data_,
     staleTime,
-    suspense,
-    onError,
-    onSettled,
-    onSuccess,
     select,
-    keepPreviousData,
     refetchInterval: (data) => {
       if (!data) return 6_000
-      return 0
+      return 3_000
     },
   })
 }

@@ -1,15 +1,15 @@
-import { useContext } from 'react'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { FarmsPageLayout, FarmsContext } from 'components/Farms/components/index'
+import { FarmWithStakedValue } from '@pancakeswap/farms'
 import FarmCard from 'components/Farms/components/FarmCard/FarmCard'
-import { useCakePriceAsBigNumber } from 'hooks/useStablePrice'
 import { getDisplayApr } from 'components/Farms/components/getDisplayApr'
-import { FarmWithStakedValue } from 'components/Farms/components/types'
+import { FarmsContext, FarmsPageLayout } from 'components/Farms/components/index'
+import useActiveWeb3React from 'hooks/useActiveWeb3React'
+import { usePriceCakeUsdc } from 'hooks/useStablePrice'
+import { useContext } from 'react'
 
 const FarmsPage = () => {
   const { account } = useActiveWeb3React()
   const { chosenFarmsMemoized } = useContext(FarmsContext)
-  const cakePrice = useCakePriceAsBigNumber()
+  const cakePrice = usePriceCakeUsdc()
 
   return (
     <>
@@ -17,7 +17,7 @@ const FarmsPage = () => {
         <FarmCard
           key={farm.pid}
           farm={farm}
-          displayApr={getDisplayApr(farm.apr, farm.lpRewardsApr) as string}
+          displayApr={getDisplayApr(farm.apr, farm.lpRewardsApr, farm.dualTokenRewardApr) as string}
           cakePrice={cakePrice}
           account={account}
           removed={false}

@@ -16,10 +16,10 @@ import {
 } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
 import { getLPSymbol } from 'utils/getLpSymbol'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { GreyCard } from 'components/Card'
 import { CurrencyLogo, DoubleCurrencyLogo } from 'components/Logo'
-import { useUserSlippage } from 'state/user'
+import { useUserSlippage } from '@pancakeswap/utils/user'
 import formatAmountDisplay from 'utils/formatAmountDisplay'
 
 import { CurrencySelectorValue } from '../hooks/useCurrencySelectRoute'
@@ -156,7 +156,6 @@ export const AddLiquidityModalHeader = ({
     t('Output is estimated. If the price changes by more than %slippage%% your transaction will revert.', {
       slippage: allowedSlippage / 100,
     }),
-    { placement: 'auto' },
   )
 
   return (
@@ -176,7 +175,7 @@ export const AddLiquidityModalHeader = ({
         </GreyCard>
       </AutoColumn>
       <RowBetween>
-        <Subtitle>{t('Your pool share')}</Subtitle>
+        <Subtitle>{t('Your share in the pair')}</Subtitle>
         <Text>{noLiquidity ? '100' : poolTokenPercentage?.toSignificant(4)}%</Text>
       </RowBetween>
       <AutoColumn gap="8px">{children}</AutoColumn>

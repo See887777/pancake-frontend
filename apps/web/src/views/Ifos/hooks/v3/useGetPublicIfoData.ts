@@ -1,14 +1,17 @@
 import BigNumber from 'bignumber.js'
 import { useState, useCallback } from 'react'
 import { BSC_BLOCK_TIME } from 'config'
-import ifoV2Abi from 'config/abi/ifoV2.json'
-import ifoV3Abi from 'config/abi/ifoV3.json'
+import round from 'lodash/round'
+import { ifoV2ABI } from 'config/abi/ifoV2'
+import { ifoV3ABI } from 'config/abi/ifoV3'
 import { bscTokens } from '@pancakeswap/tokens'
-import { Ifo, IfoStatus } from 'config/constants/types'
+import { Ifo, IfoStatus } from '@pancakeswap/ifos'
 
-import { useLpTokenPrice, usePriceCakeBusd } from 'state/farms/hooks'
+import { useLpTokenPrice } from 'state/farms/hooks'
+import { useCakePrice } from 'hooks/useCakePrice'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { multicallv2 } from 'utils/multicall'
+import { publicClient } from 'utils/wagmi'
+import { ChainId } from '@pancakeswap/chains'
 import { PublicIfoData } from '../../types'
 import { getStatus } from '../helpers'
 
@@ -28,20 +31,22 @@ const formatPool = (pool) => ({
 })
 
 const formatVestingInfo = (pool) => ({
-  percentage: pool ? pool[0].toNumber() : 0,
-  cliff: pool ? pool[1].toNumber() : 0,
-  duration: pool ? pool[2].toNumber() : 0,
-  slicePeriodSeconds: pool ? pool[3].toNumber() : 0,
+  percentage: pool ? Number(pool[0]) : 0,
+  cliff: pool ? Number(pool[1]) : 0,
+  duration: pool ? Number(pool[2]) : 0,
+  slicePeriodSeconds: pool ? Number(pool[3]) : 0,
 })
+
+const ROUND_DIGIT = 3
 
 /**
  * Gets all public data of an IFO
  */
 const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
-  const { address, version, plannedStartTime } = ifo
-  const cakePriceUsd = usePriceCakeBusd()
+  const { address, plannedStartTime } = ifo
+  const cakePrice = useCakePrice()
   const lpTokenPriceInUsd = useLpTokenPrice(ifo.currency.symbol)
-  const currencyPriceInUSD = ifo.currency === bscTokens.cake ? cakePriceUsd : lpTokenPriceInUsd
+  const currencyPriceInUSD = ifo.currency === bscTokens.cake ? cakePrice : lpTokenPriceInUsd
 
   const [state, setState] = useState({
     isInitialized: false,
@@ -55,6 +60,7 @@ const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
       offeringAmountPool: BIG_ZERO,
       limitPerUserInLP: BIG_ZERO,
       taxRate: 0,
+      distributionRatio: 0,
       totalAmountPool: BIG_ZERO,
       sumTaxesOverflow: BIG_ZERO,
       pointThreshold: 0,
@@ -71,6 +77,7 @@ const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
       offeringAmountPool: BIG_ZERO,
       limitPerUserInLP: BIG_ZERO,
       taxRate: 0,
+      distributionRatio: 0,
       totalAmountPool: BIG_ZERO,
       sumTaxesOverflow: BIG_ZERO,
       vestingInformation: {
@@ -88,10 +95,9 @@ const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
     plannedStartTime: 0,
   })
 
-  const abi = version >= 3.1 ? ifoV3Abi : ifoV2Abi // ifoV2Abi use for version 3.0
-
   const fetchIfoData = useCallback(
     async (currentBlock: number) => {
+      const client = publicClient({ chainId: ChainId.BSC })
       const [
         startBlock,
         endBlock,
@@ -100,76 +106,100 @@ const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
         taxRate,
         numberPoints,
         thresholdPoints,
-        admissionProfile,
-        pointThreshold,
-        vestingStartTime,
-        basicVestingInformation,
-        unlimitedVestingInformation,
-      ] = await multicallv2({
-        abi,
-        calls: [
+        privateSaleTaxRate,
+      ] = await client.multicall({
+        contracts: [
           {
+            abi: ifoV2ABI,
             address,
-            name: 'startBlock',
+            functionName: 'startBlock',
           },
           {
+            abi: ifoV2ABI,
             address,
-            name: 'endBlock',
+            functionName: 'endBlock',
           },
           {
+            abi: ifoV2ABI,
             address,
-            name: 'viewPoolInformation',
-            params: [0],
+            functionName: 'viewPoolInformation',
+            args: [0n],
           },
           {
+            abi: ifoV2ABI,
             address,
-            name: 'viewPoolInformation',
-            params: [1],
+            functionName: 'viewPoolInformation',
+            args: [1n],
           },
           {
+            abi: ifoV2ABI,
             address,
-            name: 'viewPoolTaxRateOverflow',
-            params: [1],
+            functionName: 'viewPoolTaxRateOverflow',
+            args: [1n],
           },
           {
+            abi: ifoV2ABI,
             address,
-            name: 'numberPoints',
+            functionName: 'numberPoints',
           },
           {
+            abi: ifoV2ABI,
             address,
-            name: 'thresholdPoints',
+            functionName: 'thresholdPoints',
           },
-          version >= 3.1 && {
+          {
+            abi: ifoV2ABI,
             address,
-            name: 'admissionProfile',
+            functionName: 'viewPoolTaxRateOverflow',
+            args: [0n],
           },
-          version >= 3.1 && {
-            address,
-            name: 'pointThreshold',
-          },
-          version === 3.2 && {
-            address,
-            name: 'vestingStartTime',
-          },
-          version === 3.2 && {
-            address,
-            name: 'viewPoolVestingInformation',
-            params: [0],
-          },
-          version === 3.2 && {
-            address,
-            name: 'viewPoolVestingInformation',
-            params: [1],
-          },
-        ].filter(Boolean),
+        ],
+        allowFailure: false,
       })
+
+      const [admissionProfile, pointThreshold, vestingStartTime, basicVestingInformation, unlimitedVestingInformation] =
+        await client.multicall({
+          contracts: [
+            {
+              abi: ifoV3ABI,
+              address,
+              functionName: 'admissionProfile',
+            },
+            {
+              abi: ifoV3ABI,
+              address,
+              functionName: 'pointThreshold',
+            },
+            {
+              abi: ifoV3ABI,
+              address,
+              functionName: 'vestingStartTime',
+            },
+            {
+              abi: ifoV3ABI,
+              address,
+              functionName: 'viewPoolVestingInformation',
+              args: [0n],
+            },
+            {
+              abi: ifoV3ABI,
+              address,
+              functionName: 'viewPoolVestingInformation',
+              args: [1n],
+            },
+          ],
+          allowFailure: true,
+        })
 
       const poolBasicFormatted = formatPool(poolBasic)
       const poolUnlimitedFormatted = formatPool(poolUnlimited)
 
-      const startBlockNum = startBlock ? startBlock[0].toNumber() : 0
-      const endBlockNum = endBlock ? endBlock[0].toNumber() : 0
-      const taxRateNum = taxRate ? new BigNumber(taxRate[0]._hex).div(TAX_PRECISION).toNumber() : 0
+      const startBlockNum = startBlock ? Number(startBlock) : 0
+      const endBlockNum = endBlock ? Number(endBlock) : 0
+      const taxRateNum = taxRate ? new BigNumber(taxRate.toString()).div(TAX_PRECISION).toNumber() : 0
+      const privateSaleTaxRateNum = privateSaleTaxRate
+        ? new BigNumber(privateSaleTaxRate.toString()).div(TAX_PRECISION).toNumber()
+        : 0
 
       const status = getStatus(currentBlock, startBlockNum, endBlockNum)
       const totalBlocks = endBlockNum - startBlockNum
@@ -178,41 +208,55 @@ const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
       // Calculate the total progress until finished or until start
       const progress = status === 'live' ? ((currentBlock - startBlockNum) / totalBlocks) * 100 : null
 
-      setState((prev) => ({
-        ...prev,
-        isInitialized: true,
-        secondsUntilEnd: blocksRemaining * BSC_BLOCK_TIME,
-        secondsUntilStart: (startBlockNum - currentBlock) * BSC_BLOCK_TIME,
-        poolBasic: {
-          ...poolBasicFormatted,
-          taxRate: 0,
-          pointThreshold: pointThreshold ? pointThreshold[0].toNumber() : 0,
-          admissionProfile:
-            Boolean(admissionProfile && admissionProfile[0]) && admissionProfile[0] !== NO_QUALIFIED_NFT_ADDRESS
-              ? admissionProfile[0]
-              : undefined,
-          vestingInformation: formatVestingInfo(basicVestingInformation),
-        },
-        poolUnlimited: {
-          ...poolUnlimitedFormatted,
-          taxRate: taxRateNum,
-          vestingInformation: formatVestingInfo(unlimitedVestingInformation),
-        },
-        status,
-        progress,
-        blocksRemaining,
-        startBlockNum,
-        endBlockNum,
-        thresholdPoints: thresholdPoints && thresholdPoints[0],
-        numberPoints: numberPoints ? numberPoints[0].toNumber() : 0,
-        plannedStartTime: plannedStartTime ?? 0,
-        vestingStartTime: vestingStartTime ? vestingStartTime[0].toNumber() : 0,
-      }))
+      const totalOfferingAmount = poolBasicFormatted.offeringAmountPool.plus(poolUnlimitedFormatted.offeringAmountPool)
+
+      setState(
+        (prev) =>
+          ({
+            ...prev,
+            isInitialized: true,
+            secondsUntilEnd: blocksRemaining * BSC_BLOCK_TIME,
+            secondsUntilStart: (startBlockNum - currentBlock) * BSC_BLOCK_TIME,
+            poolBasic: {
+              ...poolBasicFormatted,
+              taxRate: privateSaleTaxRateNum,
+              distributionRatio: round(
+                poolBasicFormatted.offeringAmountPool.div(totalOfferingAmount).toNumber(),
+                ROUND_DIGIT,
+              ),
+              pointThreshold: pointThreshold.result ? Number(pointThreshold.result) : 0,
+              admissionProfile:
+                Boolean(admissionProfile && admissionProfile.result) &&
+                admissionProfile.result !== NO_QUALIFIED_NFT_ADDRESS
+                  ? admissionProfile.result
+                  : undefined,
+              vestingInformation: formatVestingInfo(basicVestingInformation.result),
+            },
+            poolUnlimited: {
+              ...poolUnlimitedFormatted,
+              taxRate: taxRateNum,
+              distributionRatio: round(
+                poolUnlimitedFormatted.offeringAmountPool.div(totalOfferingAmount).toNumber(),
+                ROUND_DIGIT,
+              ),
+              vestingInformation: formatVestingInfo(unlimitedVestingInformation.result),
+            },
+            status,
+            progress,
+            blocksRemaining,
+            startBlockNum,
+            endBlockNum,
+            thresholdPoints,
+            numberPoints: numberPoints ? Number(numberPoints) : 0,
+            plannedStartTime: plannedStartTime ?? 0,
+            vestingStartTime: vestingStartTime.result ? Number(vestingStartTime.result) : 0,
+          } as any),
+      )
     },
-    [plannedStartTime, address, version, abi],
+    [plannedStartTime, address],
   )
 
-  return { ...state, currencyPriceInUSD, fetchIfoData }
+  return { ...state, currencyPriceInUSD, fetchIfoData } as any
 }
 
 export default useGetPublicIfoData

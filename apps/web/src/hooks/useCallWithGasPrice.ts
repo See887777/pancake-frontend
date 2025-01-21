@@ -1,70 +1,69 @@
-import { AppState } from 'state'
-import { useSelector } from 'react-redux'
 import { useCallback } from 'react'
-import { TransactionResponse } from '@ethersproject/providers'
-import { Contract, CallOverrides } from '@ethersproject/contracts'
 import { useGasPrice } from 'state/user/hooks'
-import get from 'lodash/get'
-import { addBreadcrumb } from '@sentry/nextjs'
-import { GAS_PRICE_GWEI } from '../state/types'
+import { calculateGasMargin } from 'utils'
+import { publicClient } from 'utils/wagmi'
+import type { ContractFunctionArgs, ContractFunctionName, EstimateContractGasParameters } from 'viem'
+import { Abi, Account, Address, CallParameters, Chain, WriteContractParameters } from 'viem'
+import { useWalletClient } from 'wagmi'
+import { useActiveChainId } from './useActiveChainId'
 
 export function useCallWithGasPrice() {
   const gasPrice = useGasPrice()
-  const userGasPrice = useSelector<AppState, AppState['user']['gasPrice']>((state) => state.user.gasPrice)
+  const { chainId } = useActiveChainId()
+  const { data: walletClient } = useWalletClient()
 
-  /**
-   * Perform a contract call with a gas price returned from useGasPrice
-   * @param contract Used to perform the call
-   * @param methodName The name of the method called
-   * @param methodArgs An array of arguments to pass to the method
-   * @param overrides An overrides object to pass to the method. gasPrice passed in here will take priority over the price returned by useGasPrice
-   * @returns https://docs.ethers.io/v5/api/providers/types/#providers-TransactionReceipt
-   */
-  const callWithGasPrice = useCallback(
-    async (
-      contract: Contract,
-      methodName: string,
-      methodArgs: any[] = [],
-      overrides: CallOverrides = null,
-    ): Promise<TransactionResponse> => {
-      addBreadcrumb({
-        type: 'Transaction',
-        message:
-          userGasPrice === GAS_PRICE_GWEI.rpcDefault
-            ? `Call with market gas price`
-            : `Call with gas price: ${gasPrice}`,
-        data: {
-          contractAddress: contract.address,
-          methodName,
-          methodArgs,
-          overrides,
-        },
-      })
-
-      const contractMethod = get(contract, methodName)
-      const hasManualGasPriceOverride = overrides?.gasPrice
-      const tx = await contractMethod(
-        ...methodArgs,
-        hasManualGasPriceOverride ? { ...overrides } : { ...overrides, gasPrice },
-      )
-
-      if (tx) {
-        addBreadcrumb({
-          type: 'Transaction',
-          message: `Transaction sent: ${tx.hash}`,
-          data: {
-            hash: tx.hash,
-            from: tx.from,
-            gasLimit: tx.gasLimit?.toString(),
-            nonce: tx.nonce,
-          },
-        })
+  const callWithGasPriceWithSimulate = useCallback(
+    async <
+      TAbi extends Abi | unknown[],
+      functionName extends ContractFunctionName<TAbi, 'nonpayable' | 'payable'>,
+      args extends ContractFunctionArgs<TAbi, 'nonpayable' | 'payable', functionName>,
+    >(
+      contract: { abi: TAbi; account: Account | undefined; chain: Chain | undefined; address: Address } | null,
+      methodName: functionName,
+      methodArgs?: args,
+      overrides?: Omit<CallParameters, 'chain' | 'to' | 'data'>,
+    ): Promise<{ hash: Address }> => {
+      if (!contract) {
+        throw new Error('No valid contract')
+      }
+      if (!walletClient) {
+        throw new Error('No valid wallet connect')
+      }
+      const { gas: gas_, ...overrides_ } = overrides || {}
+      let gas = gas_
+      if (!gas) {
+        gas = await publicClient({ chainId }).estimateContractGas({
+          abi: contract.abi,
+          address: contract.address,
+          account: walletClient.account,
+          functionName: methodName,
+          args: methodArgs,
+          value: 0n,
+          ...overrides_,
+        } as unknown as EstimateContractGasParameters)
       }
 
-      return tx
+      const res = await walletClient.writeContract({
+        abi: contract.abi,
+        address: contract.address,
+        account: walletClient.account,
+        functionName: methodName,
+        args: methodArgs,
+        gasPrice,
+        // for some reason gas price is insamely high when using maxuint approval, so commenting out for now
+        gas: calculateGasMargin(gas),
+        value: 0n,
+        ...overrides_,
+      } as unknown as WriteContractParameters)
+
+      const hash = res
+
+      return {
+        hash,
+      }
     },
-    [gasPrice, userGasPrice],
+    [chainId, gasPrice, walletClient],
   )
 
-  return { callWithGasPrice }
+  return { callWithGasPrice: callWithGasPriceWithSimulate }
 }

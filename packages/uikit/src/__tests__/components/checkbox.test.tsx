@@ -1,16 +1,14 @@
-import React from "react";
-import { renderWithProvider } from "../../testHelpers";
+import { expect, it, vi } from "vitest";
 import Checkbox from "../../components/Checkbox/Checkbox";
+import { renderWithProvider } from "../../testHelpers";
 
-const handleChange = jest.fn();
+const handleChange = vi.fn();
 
 it("renders correctly", () => {
   const { asFragment } = renderWithProvider(<Checkbox checked onChange={handleChange} />);
   expect(asFragment()).toMatchInlineSnapshot(`
     <DocumentFragment>
       .c0 {
-      -webkit-appearance: none;
-      -moz-appearance: none;
       appearance: none;
       overflow: hidden;
       cursor: pointer;
@@ -18,13 +16,28 @@ it("renders correctly", () => {
       display: inline-block;
       height: 32px;
       width: 32px;
+      min-height: 32px;
+      min-width: 32px;
       vertical-align: middle;
-      -webkit-transition: background-color 0.2s ease-in-out;
       transition: background-color 0.2s ease-in-out;
       border: 0;
       border-radius: 8px;
-      background-color: var(--colors-input);
+      background-color: var(--colors-cardBorder);
       box-shadow: var(--shadows-inset);
+    }
+
+    .c0:before {
+      content: "";
+      position: absolute;
+      border-top: 2px solid;
+      border-color: transparent;
+      top: 50%;
+      left: 50%;
+      width: 33%;
+      height: 0;
+      margin: auto;
+      transform: translate(-50%, -50%);
+      transition: border-color 0.2s ease-in-out;
     }
 
     .c0:after {
@@ -39,10 +52,7 @@ it("renders correctly", () => {
       width: 50%;
       height: 25%;
       margin: auto;
-      -webkit-transform: rotate(-50deg);
-      -ms-transform: rotate(-50deg);
       transform: rotate(-50deg);
-      -webkit-transition: border-color 0.2s ease-in-out;
       transition: border-color 0.2s ease-in-out;
     }
 
@@ -56,6 +66,7 @@ it("renders correctly", () => {
     }
 
     .c0:checked {
+      border: 0;
       background-color: var(--colors-success);
     }
 
@@ -64,12 +75,12 @@ it("renders correctly", () => {
     }
 
     .c0:disabled {
+      border: 0;
       cursor: default;
       opacity: 0.6;
     }
 
     <input
-        checked=""
         class="c0"
         scale="md"
         type="checkbox"

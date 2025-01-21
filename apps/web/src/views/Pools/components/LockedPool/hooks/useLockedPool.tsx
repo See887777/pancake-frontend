@@ -1,25 +1,28 @@
-import { useState, useCallback, Dispatch, SetStateAction } from 'react'
+import { useState, useCallback, Dispatch, SetStateAction, useMemo } from 'react'
 import { useAccount } from 'wagmi'
 import { useTranslation } from '@pancakeswap/localization'
+import { ONE_WEEK_DEFAULT } from '@pancakeswap/pools'
 import { useAppDispatch } from 'state'
-import { useBUSDCakeAmount } from 'hooks/useBUSDPrice'
 import { useVaultPoolContract } from 'hooks/useContract'
 import BigNumber from 'bignumber.js'
-import { getDecimalAmount } from '@pancakeswap/utils/formatBalance'
+import { getBalanceNumber, getDecimalAmount } from '@pancakeswap/utils/formatBalance'
 import { useToast } from '@pancakeswap/uikit'
 import useCatchTxError from 'hooks/useCatchTxError'
 import { fetchCakeVaultUserData } from 'state/pools'
 import { Token } from '@pancakeswap/sdk'
-import { ONE_WEEK_DEFAULT, vaultPoolConfig } from 'config/constants/pools'
+import { vaultPoolConfig } from 'config/constants/pools'
 import { VaultKey } from 'state/types'
+import { useActiveChainId } from 'hooks/useActiveChainId'
 
 import { ToastDescriptionWithTx } from 'components/Toast'
 import { useCallWithGasPrice } from 'hooks/useCallWithGasPrice'
+import { useQueryClient } from '@tanstack/react-query'
 import { PrepConfirmArg } from '../types'
 
 interface HookArgs {
   lockedAmount: BigNumber
   stakingToken: Token
+  stakingTokenPrice: number
   onDismiss: () => void
   prepConfirmArg: PrepConfirmArg
   defaultDuration?: number
@@ -34,30 +37,45 @@ interface HookReturn {
 }
 
 export default function useLockedPool(hookArgs: HookArgs): HookReturn {
-  const { lockedAmount, stakingToken, onDismiss, prepConfirmArg, defaultDuration = ONE_WEEK_DEFAULT } = hookArgs
+  const {
+    lockedAmount,
+    stakingToken,
+    stakingTokenPrice,
+    onDismiss,
+    prepConfirmArg,
+    defaultDuration = ONE_WEEK_DEFAULT,
+  } = hookArgs
 
   const dispatch = useAppDispatch()
+  const { chainId } = useActiveChainId()
 
   const { address: account } = useAccount()
   const { fetchWithCatchTxError, loading: pendingTx } = useCatchTxError()
   const vaultPoolContract = useVaultPoolContract(VaultKey.CakeVault)
   const { callWithGasPrice } = useCallWithGasPrice()
+  const usdValueStaked = useMemo(
+    () =>
+      getBalanceNumber(
+        getDecimalAmount(lockedAmount, stakingToken.decimals).multipliedBy(stakingTokenPrice),
+        stakingToken.decimals,
+      ),
+    [lockedAmount, stakingTokenPrice, stakingToken.decimals],
+  )
 
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const { toastSuccess } = useToast()
   const [duration, setDuration] = useState(() => defaultDuration)
-  const usdValueStaked = useBUSDCakeAmount(lockedAmount.toNumber())
 
   const handleDeposit = useCallback(
     async (convertedStakeAmount: BigNumber, lockDuration: number) => {
+      if (!account || !chainId) return
       const callOptions = {
-        gasLimit: vaultPoolConfig[VaultKey.CakeVault].gasLimit,
+        gas: vaultPoolConfig[VaultKey.CakeVault].gasLimit,
       }
 
       const receipt = await fetchWithCatchTxError(() => {
-        // .toString() being called to fix a BigNumber error in prod
-        // as suggested here https://github.com/ChainSafe/web3.js/issues/2077
-        const methodArgs = [convertedStakeAmount.toString(), lockDuration]
+        const methodArgs = [BigInt(convertedStakeAmount.toString()), BigInt(lockDuration)] as const
         return callWithGasPrice(vaultPoolContract, 'deposit', methodArgs, callOptions)
       })
 
@@ -69,10 +87,24 @@ export default function useLockedPool(hookArgs: HookArgs): HookReturn {
           </ToastDescriptionWithTx>,
         )
         onDismiss?.()
-        dispatch(fetchCakeVaultUserData({ account }))
+        dispatch(fetchCakeVaultUserData({ account, chainId }))
+        queryClient.invalidateQueries({
+          queryKey: ['userCakeLockStatus', account],
+        })
       }
     },
-    [fetchWithCatchTxError, toastSuccess, dispatch, onDismiss, account, vaultPoolContract, t, callWithGasPrice],
+    [
+      fetchWithCatchTxError,
+      toastSuccess,
+      dispatch,
+      onDismiss,
+      account,
+      vaultPoolContract,
+      t,
+      callWithGasPrice,
+      queryClient,
+      chainId,
+    ],
   )
 
   const handleConfirmClick = useCallback(async () => {

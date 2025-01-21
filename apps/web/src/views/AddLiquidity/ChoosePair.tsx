@@ -1,14 +1,14 @@
 import { useTranslation } from '@pancakeswap/localization'
 import { Currency } from '@pancakeswap/sdk'
-import { AddIcon, Box, CardBody, CardFooter, Text, TooltipText, useTooltip, FlexGap } from '@pancakeswap/uikit'
+import { AddIcon, Box, CardBody, CardFooter, FlexGap, Text, TooltipText, useTooltip } from '@pancakeswap/uikit'
 import { CommitButton } from 'components/CommitButton'
 import ConnectWalletButton from 'components/ConnectWalletButton'
 import { CurrencySelect } from 'components/CurrencySelect'
 import { RowBetween } from 'components/Layout/Row'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { usePair } from 'hooks/usePairs'
-import { formatAmount } from 'utils/formatInfoNumbers'
+import { useV2Pair } from 'hooks/usePairs'
 import { useLPApr } from 'state/swap/useLPApr'
+import { formatAmount } from 'utils/formatInfoNumbers'
+import { useAccount } from 'wagmi'
 import { AppHeader } from '../../components/App'
 import { CommonBasesType } from '../../components/SearchModal/types'
 import { useCurrencySelectRoute } from './useCurrencySelectRoute'
@@ -24,14 +24,14 @@ export function ChoosePair({
   error?: string
   onNext?: () => void
 }) {
-  const { account } = useActiveWeb3React()
+  const { address: account } = useAccount()
   const { t } = useTranslation()
   const isValid = !error
   const { handleCurrencyASelect, handleCurrencyBSelect } = useCurrencySelectRoute()
-  const [, pair] = usePair(currencyA, currencyB)
-  const poolData = useLPApr(pair)
+  const [, pair] = useV2Pair(currencyA, currencyB)
+  const poolData = useLPApr('v2', pair)
   const { targetRef, tooltip, tooltipVisible } = useTooltip(
-    t(`Based on last 7 days' performance. Does not account for impermanent loss`),
+    t(`Based on last 24 hours' performance. Does not account for impermanent loss`),
     {
       placement: 'bottom',
     },
@@ -43,9 +43,9 @@ export function ChoosePair({
         title={t('Add Liquidity')}
         subtitle={t('Receive LP tokens and earn 0.17% trading fees')}
         helper={t(
-          'Liquidity providers earn a 0.17% trading fee on all trades made for that token pair, proportional to their share of the liquidity pool.',
+          'Liquidity providers earn a 0.17% trading fee on all trades made for that token pair, proportional to their share of the liquidity pair.',
         )}
-        backTo="/liquidity"
+        backTo="/liquidity/pools"
       />
       <CardBody>
         <Box>
@@ -76,7 +76,7 @@ export function ChoosePair({
               </TooltipText>
               {tooltipVisible && tooltip}
               <Text bold color="primary">
-                {formatAmount(poolData.lpApr7d)}%
+                {formatAmount(poolData.lpApr)}%
               </Text>
             </RowBetween>
           )}

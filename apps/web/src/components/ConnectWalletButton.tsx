@@ -1,52 +1,31 @@
-import { useTranslation } from '@pancakeswap/localization'
-import { WalletModalV2 } from '@pancakeswap/ui-wallets'
-import { Button, ButtonProps } from '@pancakeswap/uikit'
-import { createWallets, getDocLink } from 'config/wallet'
-import { useActiveChainId } from 'hooks/useActiveChainId'
-import useAuth from 'hooks/useAuth'
-// @ts-ignore
-// eslint-disable-next-line import/extensions
-import { useActiveHandle } from 'hooks/useEagerConnect.bmp.ts'
-import { useMemo, useState } from 'react'
-import { useConnect } from 'wagmi'
+import { Button, ButtonProps, FlexGap, WalletFilledV2Icon } from '@pancakeswap/uikit'
+
+import { useCallback, useState } from 'react'
+import WalletModalManager from 'components/WalletModalManager'
 import Trans from './Trans'
 
-const ConnectWalletButton = ({ children, ...props }: ButtonProps) => {
-  const handleActive = useActiveHandle()
-  const { login } = useAuth()
-  const {
-    t,
-    currentLanguage: { code },
-  } = useTranslation()
-  const { connectAsync } = useConnect()
-  const { chainId } = useActiveChainId()
+interface ConnectWalletButtonProps extends ButtonProps {
+  withIcon?: boolean
+}
+
+const ConnectWalletButton = ({ children, withIcon, ...props }: ConnectWalletButtonProps) => {
   const [open, setOpen] = useState(false)
-
-  const docLink = useMemo(() => getDocLink(code), [code])
-
-  const handleClick = () => {
-    if (typeof __NEZHA_BRIDGE__ !== 'undefined') {
-      handleActive()
-    } else {
-      setOpen(true)
-    }
-  }
-
-  const wallets = useMemo(() => createWallets(chainId, connectAsync), [chainId, connectAsync])
+  const handleOnDismiss = useCallback(() => setOpen(false), [])
 
   return (
     <>
-      <Button onClick={handleClick} {...props}>
-        {children || <Trans>Connect Wallet</Trans>}
+      <Button onClick={() => setOpen(true)} {...props}>
+        <FlexGap gap="8px" justifyContent="center" alignItems="center">
+          {children || <Trans>Connect Wallet</Trans>} {withIcon && <WalletFilledV2Icon color="invertedContrast" />}
+        </FlexGap>
       </Button>
-      <WalletModalV2
-        docText={t('Learn How to Connect')}
-        docLink={docLink}
-        isOpen={open}
-        wallets={wallets}
-        login={login}
-        onDismiss={() => setOpen(false)}
-      />
+      <style jsx global>{`
+        w3m-modal {
+          position: relative;
+          z-index: 99;
+        }
+      `}</style>
+      <WalletModalManager isOpen={open} onDismiss={handleOnDismiss} />
     </>
   )
 }

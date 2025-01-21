@@ -1,174 +1,149 @@
-/* eslint-disable prefer-destructuring */
-/* eslint-disable consistent-return */
-/* eslint-disable class-methods-use-this */
-import {
-  Chain,
-  ConnectorNotFoundError,
-  ResourceUnavailableError,
-  ChainNotConfiguredError,
-  RpcError,
-  UserRejectedRequestError,
-  ProviderRpcError,
-} from 'wagmi'
-import { Connector, normalizeChainId } from '@wagmi/core'
-import type { EthereumProviderInterface } from '@blocto/sdk'
-import { getAddress } from '@ethersproject/address'
-import { ExternalProvider, Web3Provider } from '@ethersproject/providers'
+import type {
+  EthereumProviderConfig as BloctoEthereumProviderParameters,
+  EthereumProviderInterface as BloctoProvider,
+} from '@blocto/sdk'
+import BloctoSDK from '@blocto/sdk'
+import { RpcError, SwitchChainError, UserRejectedRequestError, getAddress, numberToHex } from 'viem'
+import { createConnector, normalizeChainId } from 'wagmi'
 
-const chainIdToNetwork: { [network: number]: string } = {
-  1: 'mainnet',
-  3: 'ropsten',
-  4: 'rinkeby',
-  42: 'kovan',
-  56: 'bsc', // BSC Mainnet
-  97: 'chapel', // BSC Testnet
-  137: 'polygon', // Polygon Mainnet
-  80001: 'mumbai', // Polygon Testnet
-  43114: 'avalanche', // Avalanche Mainnet
-  43113: 'fuji', // Avalanche Testnet
+export type BloctoParameters = {
+  /**
+   * Your app’s unique identifier that can be obtained at https://developers.blocto.app,
+   * To get advanced features and support with Blocto.
+   *
+   * https://docs.blocto.app/blocto-sdk/register-app-id
+   */
+  appId?: string
 }
 
-export class BloctoConnector extends Connector<EthereumProviderInterface, { defaultChainId: number; appId?: string }> {
-  readonly id = 'blocto'
+blocto.type = 'blocto' as const
+export function blocto({ appId }: BloctoParameters = {}) {
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  type Properties = {}
+  type StorageItem = {
+    store: any
+    'wagmi.recentConnectorId': string
+  }
 
-  readonly name = 'Blocto'
+  let walletProvider: BloctoProvider | undefined
+  const handleConnectReset = () => {
+    walletProvider = undefined
+  }
 
-  readonly ready = typeof window !== 'undefined'
+  return createConnector<BloctoProvider, Properties, StorageItem>((config) => ({
+    id: 'blocto',
+    name: 'Blocto',
+    type: blocto.type,
+    async connect({ chainId } = {}) {
+      try {
+        const provider = await this.getProvider({ chainId })
 
-  provider?: EthereumProviderInterface
+        config.emitter.emit('message', { type: 'connecting' })
 
-  constructor(
-    config: { chains?: Chain[]; options: { defaultChainId: number; appId?: string } } = {
-      options: { defaultChainId: 56 },
+        await provider.request({
+          method: 'eth_requestAccounts',
+        })
+
+        const accounts = await this.getAccounts()
+        const _chainId = await this.getChainId()
+
+        return { accounts, chainId: _chainId }
+      } catch (error: unknown) {
+        handleConnectReset()
+        throw error
+      }
     },
-  ) {
-    const chains = config.chains?.filter((c) => !!chainIdToNetwork[c.id])
-    super({
-      chains,
-      options: config.options,
-    })
-  }
-
-  async connect({ chainId }: { chainId?: number } = {}) {
-    try {
-      const provider = await this.getProvider({ chainId })
-      if (!provider) throw new ConnectorNotFoundError()
-
-      if (provider.on) {
-        provider.on('accountsChanged', this.onAccountsChanged)
-        provider.on('chainChanged', this.onChainChanged)
-        provider.on('disconnect', this.onDisconnect)
-      }
-
-      this.emit('message', { type: 'connecting' })
-
-      const account = await this.getAccount()
-      const id = await this.getChainId()
-      const unsupported = this.isChainUnsupported(id)
-
-      return { account, chain: { id, unsupported }, provider }
-    } catch (error) {
-      if (this.isUserRejectedRequestError(error)) throw new UserRejectedRequestError(error)
-      if ((<RpcError>error).code === -32002) throw new ResourceUnavailableError(error)
-      throw error
-    }
-  }
-
-  async getProvider({ chainId }: { chainId?: number } = {}) {
-    // Force create new provider
-    if (!this.provider || chainId) {
-      const rpc = this.chains.reduce(
-        // eslint-disable-next-line @typescript-eslint/no-shadow
-        (rpc, chain) => ({ ...rpc, [chain.id]: chain.rpcUrls.default }),
-        {} as Record<number, string>,
-      )
-
-      let targetChainId = chainId
-      if (!targetChainId) {
-        const fallbackChainId = this.options.defaultChainId
-        if (fallbackChainId && !this.isChainUnsupported(fallbackChainId)) targetChainId = fallbackChainId
-      }
-
-      if (!targetChainId) throw new ChainNotConfiguredError()
-
-      const BloctoSDK = (await import('@blocto/sdk')).default
-      this.provider = new BloctoSDK({
-        appId: this.options.appId,
-        ethereum: {
-          chainId: targetChainId,
-          rpc: rpc[targetChainId],
-        },
-      }).ethereum
-    }
-
-    if (!this.provider) throw new ConnectorNotFoundError()
-
-    return this.provider
-  }
-
-  async isAuthorized(): Promise<boolean> {
-    try {
+    async disconnect() {
       const provider = await this.getProvider()
-      if (!provider) throw new ConnectorNotFoundError()
-      const accounts = await provider.request({
+      await provider.request({ method: 'wallet_disconnect' })
+      handleConnectReset()
+    },
+    async getAccounts() {
+      const provider = await this.getProvider()
+      const accounts = (await provider.request({
         method: 'eth_accounts',
+      })) as string[]
+
+      return accounts.map((x) => getAddress(x))
+    },
+    async getChainId() {
+      const provider = await this.getProvider()
+      const chainId = await provider?.request({ method: 'eth_chainId' })
+      return normalizeChainId(chainId)
+    },
+    async getProvider({ chainId } = {}) {
+      if (!walletProvider) {
+        const store = await config.storage?.getItem('store')
+        const lastConnectedChainId = store?.state?.chainId
+        const desiredChainId = chainId ?? lastConnectedChainId
+        const ethereum: BloctoEthereumProviderParameters = {
+          chainId: desiredChainId,
+          rpc: config.chains.find((x) => x.id === desiredChainId)?.rpcUrls.default.http[0],
+        }
+
+        walletProvider = new BloctoSDK({ ethereum, appId })?.ethereum
+        if (!walletProvider) {
+          throw new Error('Blocto SDK is not initialized.')
+        }
+
+        walletProvider.on('accountsChanged', this.onAccountsChanged.bind(this))
+        walletProvider.on('chainChanged', this.onChainChanged.bind(this))
+        walletProvider.on('disconnect', this.onDisconnect.bind(this))
+      }
+
+      return Promise.resolve(walletProvider)
+    },
+    async isAuthorized() {
+      const recentConnectorId = await config.storage?.getItem('recentConnectorId')
+      if (recentConnectorId !== this.id) return false
+
+      const accounts = await this.getAccounts()
+      return !!accounts.length
+    },
+    async switchChain({ chainId }) {
+      try {
+        const provider = await this.getProvider()
+        const id = numberToHex(chainId)
+        const chain = config.chains.find((x) => x.id === chainId)
+        const evmSupportMap = await provider._blocto.supportNetworkList
+        const isBloctoSupportChain = evmSupportMap[`${chainId}`]
+
+        if (!chain) {
+          throw new SwitchChainError(new Error(`Chain not in config: ${id}`))
+        }
+
+        if (!isBloctoSupportChain) {
+          throw new SwitchChainError(new Error(`Blocto unsupported chain: ${id}`))
+        }
+
+        await provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [{ chainId: id, rpcUrls: chain?.rpcUrls.default.http }],
+        })
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: id }],
+        })
+
+        return chain
+      } catch (err) {
+        const error = err as RpcError
+        if (error.code === UserRejectedRequestError.code) throw new UserRejectedRequestError(error)
+
+        throw new SwitchChainError(error as Error)
+      }
+    },
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onAccountsChanged() {},
+    async onChainChanged(chainId: string) {
+      const accounts = await this.getAccounts()
+      config.emitter.emit('change', {
+        chainId: normalizeChainId(chainId),
+        accounts,
       })
-      const account = accounts[0]
-      return !!account
-    } catch {
-      return false
-    }
-  }
-
-  async getSigner({ chainId }: { chainId?: number } = {}) {
-    const [provider, account] = await Promise.all([this.getProvider({ chainId }), this.getAccount()])
-    return new Web3Provider(<ExternalProvider>provider, chainId).getSigner(account)
-  }
-
-  async getAccount() {
-    const provider = await this.getProvider()
-    if (!provider) throw new ConnectorNotFoundError()
-    const accounts = await provider.request({
-      method: 'eth_requestAccounts',
-    })
-    // return checksum address
-    return getAddress(accounts[0] as string)
-  }
-
-  async getChainId() {
-    const provider = await this.getProvider()
-    if (!provider) throw new ConnectorNotFoundError()
-    return provider.request({ method: 'eth_chainId' }).then(normalizeChainId)
-  }
-
-  protected onAccountsChanged = (accounts: string[]) => {
-    if (accounts.length === 0) this.emit('disconnect')
-    else
-      this.emit('change', {
-        account: getAddress(accounts[0] as string),
-      })
-  }
-
-  protected onChainChanged = (chainId: number | string) => {
-    const id = normalizeChainId(chainId)
-    const unsupported = this.isChainUnsupported(id)
-    this.emit('change', { chain: { id, unsupported } })
-  }
-
-  protected onDisconnect = () => {
-    this.emit('disconnect')
-  }
-
-  async disconnect() {
-    const provider = await this.getProvider()
-    if (!provider?.removeListener) return
-
-    provider.removeListener('accountsChanged', this.onAccountsChanged)
-    provider.removeListener('chainChanged', this.onChainChanged)
-    provider.removeListener('disconnect', this.onDisconnect)
-  }
-
-  protected isUserRejectedRequestError(error: unknown) {
-    return (error as ProviderRpcError).code === 4001
-  }
+    },
+    async onDisconnect() {
+      config.emitter.emit('disconnect')
+    },
+  }))
 }

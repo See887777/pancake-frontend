@@ -1,15 +1,15 @@
-import { useMemo } from 'react'
-import styled from 'styled-components'
+import { PoolIds } from '@pancakeswap/ifos'
 import { useTranslation } from '@pancakeswap/localization'
-import { Flex, Text, Progress, Tag } from '@pancakeswap/uikit'
-import { VestingData } from 'views/Ifos/hooks/vesting/fetchUserWalletIfoData'
-import { PoolIds } from 'config/constants/types'
-import { getFullDisplayBalance } from '@pancakeswap/utils/formatBalance'
+import { Flex, Progress, Tag, Text } from '@pancakeswap/uikit'
+import dayjs from 'dayjs'
 import { useCurrentBlock } from 'state/block/hooks'
+import { styled } from 'styled-components'
 import useGetPublicIfoV3Data from 'views/Ifos/hooks/v3/useGetPublicIfoData'
-import BigNumber from 'bignumber.js'
-import useSWRImmutable from 'swr/immutable'
-import { format } from 'date-fns'
+import { VestingData } from 'views/Ifos/hooks/vesting/fetchUserWalletIfoData'
+
+import { useQuery } from '@tanstack/react-query'
+import { getVestingInfo } from 'views/Ifos/hooks/getVestingInfo'
+import { isBasicSale } from '../../../hooks/v7/helpers'
 import Claim from './Claim'
 
 const WhiteCard = styled.div`
@@ -29,76 +29,46 @@ interface InfoProps {
   poolId: PoolIds
   data: VestingData
   fetchUserVestingData: () => void
+  ifoBasicSaleType?: number
 }
 
-const Info: React.FC<React.PropsWithChildren<InfoProps>> = ({ poolId, data, fetchUserVestingData }) => {
+const Info: React.FC<React.PropsWithChildren<InfoProps>> = ({
+  poolId,
+  data,
+  fetchUserVestingData,
+  ifoBasicSaleType,
+}) => {
   const { t } = useTranslation()
-  const { token } = data.ifo
   const { vestingStartTime } = data.userVestingData
-  const {
-    isVestingInitialized,
-    vestingComputeReleasableAmount,
-    offeringAmountInToken,
-    vestingInformationPercentage,
-    vestingReleased,
-    vestingInformationDuration,
-  } = data.userVestingData[poolId]
-  const labelText = poolId === PoolIds.poolUnlimited ? t('Public Sale') : t('Private Sale')
+  const { vestingInformationDuration } = data.userVestingData[poolId]
+  const { isVestingInitialized, isVestingOver, received, claimable, remaining, percentage } = getVestingInfo(
+    poolId,
+    data,
+  )
+
+  const labelText =
+    poolId === PoolIds.poolUnlimited
+      ? t('Public IFO')
+      : isBasicSale(ifoBasicSaleType)
+      ? t('Basic IFO')
+      : t('Private IFO')
 
   const currentBlock = useCurrentBlock()
   const publicIfoData = useGetPublicIfoV3Data(data.ifo)
   const { fetchIfoData: fetchPublicIfoData, isInitialized: isPublicIfoDataInitialized } = publicIfoData
-  useSWRImmutable(
-    !isPublicIfoDataInitialized && currentBlock && ['fetchPublicIfoData', currentBlock, data.ifo.id],
-    async () => {
-      fetchPublicIfoData(currentBlock)
-    },
-  )
+  useQuery({
+    queryKey: ['fetchPublicIfoData', currentBlock, data?.ifo?.id],
+    queryFn: async () => fetchPublicIfoData(currentBlock),
+    enabled: Boolean(!isPublicIfoDataInitialized && currentBlock),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  })
 
-  const { cliff } = publicIfoData[poolId]?.vestingInformation
-  const currentTimeStamp = new Date().getTime()
-  const timeCliff = vestingStartTime === 0 ? currentTimeStamp : (vestingStartTime + cliff) * 1000
+  const { cliff } = publicIfoData[poolId]?.vestingInformation || {}
+  const currentTimeStamp = Date.now()
+  const timeCliff = vestingStartTime === 0 ? currentTimeStamp : (vestingStartTime + (cliff ?? 0)) * 1000
   const timeVestingEnd = (vestingStartTime + vestingInformationDuration) * 1000
-  const isVestingOver = currentTimeStamp > timeVestingEnd
-
-  const vestingPercentage = useMemo(
-    () => new BigNumber(vestingInformationPercentage).times(0.01),
-    [vestingInformationPercentage],
-  )
-
-  const releasedAtSaleEnd = useMemo(() => {
-    return new BigNumber(offeringAmountInToken).times(new BigNumber(1).minus(vestingPercentage))
-  }, [offeringAmountInToken, vestingPercentage])
-
-  const amountReleased = useMemo(() => {
-    return new BigNumber(releasedAtSaleEnd).plus(vestingReleased).plus(vestingComputeReleasableAmount)
-  }, [releasedAtSaleEnd, vestingReleased, vestingComputeReleasableAmount])
-
-  const received = useMemo(() => {
-    const alreadyClaimed = new BigNumber(releasedAtSaleEnd).plus(vestingReleased)
-    return alreadyClaimed.gt(0) ? getFullDisplayBalance(alreadyClaimed, token.decimals, 4) : '0'
-  }, [token, releasedAtSaleEnd, vestingReleased])
-
-  const claimable = useMemo(() => {
-    const remain = new BigNumber(offeringAmountInToken).minus(amountReleased)
-    const claimableAmount = isVestingOver ? vestingComputeReleasableAmount.plus(remain) : vestingComputeReleasableAmount
-    return claimableAmount.gt(0) ? getFullDisplayBalance(claimableAmount, token.decimals, 4) : '0'
-  }, [offeringAmountInToken, amountReleased, isVestingOver, vestingComputeReleasableAmount, token.decimals])
-
-  const remaining = useMemo(() => {
-    const remain = new BigNumber(offeringAmountInToken).minus(amountReleased)
-    return remain.gt(0) ? getFullDisplayBalance(remain, token.decimals, 4) : '0'
-  }, [token, offeringAmountInToken, amountReleased])
-
-  const percentage = useMemo(() => {
-    const total = new BigNumber(received).plus(claimable).plus(remaining)
-    const receivedPercentage = new BigNumber(received).div(total).times(100).toNumber()
-    const amountAvailablePercentage = new BigNumber(claimable).div(total).times(100).toNumber()
-    return {
-      receivedPercentage,
-      amountAvailablePercentage: receivedPercentage + amountAvailablePercentage,
-    }
-  }, [received, claimable, remaining])
 
   if (claimable === '0' && remaining === '0') {
     return null
@@ -117,7 +87,7 @@ const Info: React.FC<React.PropsWithChildren<InfoProps>> = ({ poolId, data, fetc
           {cliff === 0 ? t('Vesting Start') : t('Cliff')}
         </Text>
         <Text fontSize="12px" color="textSubtle">
-          {format(timeCliff, 'MM/dd/yyyy HH:mm')}
+          {dayjs(timeCliff).format('MM/DD/YYYY HH:mm')}
         </Text>
       </Flex>
       <Flex justifyContent="space-between">
@@ -125,7 +95,7 @@ const Info: React.FC<React.PropsWithChildren<InfoProps>> = ({ poolId, data, fetc
           {t('Vesting end')}
         </Text>
         <Text fontSize="12px" color="textSubtle">
-          {format(timeVestingEnd, 'MM/dd/yyyy HH:mm')}
+          {dayjs(timeVestingEnd).format('MM/DD/YYYY HH:mm')}
         </Text>
       </Flex>
       <WhiteCard>
@@ -155,6 +125,7 @@ const Info: React.FC<React.PropsWithChildren<InfoProps>> = ({ poolId, data, fetc
         <Claim
           poolId={poolId}
           data={data}
+          enabled={isVestingOver}
           claimableAmount={claimable}
           isVestingInitialized={isVestingInitialized}
           fetchUserVestingData={fetchUserVestingData}

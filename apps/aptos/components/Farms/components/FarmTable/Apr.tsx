@@ -1,8 +1,8 @@
-import styled from 'styled-components'
+import { Skeleton } from '@pancakeswap/uikit'
 import BigNumber from 'bignumber.js'
 import { BASE_ADD_LIQUIDITY_URL } from 'config'
+import { styled } from 'styled-components'
 import getLiquidityUrlPathParts from 'utils/getLiquidityUrlPathParts'
-import { Skeleton } from '@pancakeswap/uikit'
 import ApyButton from '../FarmCard/ApyButton'
 
 export interface AprProps {
@@ -11,6 +11,7 @@ export interface AprProps {
   pid: number
   lpLabel: string
   lpSymbol: string
+  lpAddress: string
   lpRewardsApr: number
   lpTokenPrice: BigNumber
   tokenAddress?: string
@@ -19,6 +20,9 @@ export interface AprProps {
   originalValue: number
   hideButton?: boolean
   useTooltipText?: boolean
+  farmCakePerSecond?: string
+  totalMultipliers?: string
+  dualTokenRewardApr?: number
 }
 
 const Container = styled.div`
@@ -48,6 +52,7 @@ const Apr: React.FC<React.PropsWithChildren<AprProps>> = ({
   pid,
   lpLabel,
   lpSymbol,
+  lpAddress,
   lpTokenPrice,
   multiplier,
   tokenAddress = '',
@@ -57,6 +62,9 @@ const Apr: React.FC<React.PropsWithChildren<AprProps>> = ({
   hideButton = false,
   lpRewardsApr,
   useTooltipText = true,
+  farmCakePerSecond,
+  totalMultipliers,
+  dualTokenRewardApr,
 }) => {
   const liquidityUrlPathParts = getLiquidityUrlPathParts({ quoteTokenAddress, tokenAddress })
   const addLiquidityUrl = `${BASE_ADD_LIQUIDITY_URL}/${liquidityUrlPathParts}`
@@ -67,6 +75,7 @@ const Apr: React.FC<React.PropsWithChildren<AprProps>> = ({
           variant={hideButton ? 'text' : 'text-and-button'}
           pid={pid}
           lpSymbol={lpSymbol}
+          lpAddress={lpAddress}
           lpLabel={lpLabel}
           lpTokenPrice={lpTokenPrice}
           multiplier={multiplier}
@@ -77,6 +86,9 @@ const Apr: React.FC<React.PropsWithChildren<AprProps>> = ({
           addLiquidityUrl={addLiquidityUrl}
           useTooltipText={useTooltipText}
           hideButton={hideButton}
+          farmCakePerSecond={farmCakePerSecond}
+          totalMultipliers={totalMultipliers}
+          dualTokenRewardApr={dualTokenRewardApr}
         />
       ) : (
         <AprWrapper>
