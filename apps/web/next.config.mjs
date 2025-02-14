@@ -1,27 +1,21 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { withSentryConfig } from '@sentry/nextjs'
-import { withAxiom } from 'next-axiom'
 import BundleAnalyzer from '@next/bundle-analyzer'
+import { withWebSecurityHeaders } from '@pancakeswap/next-config/withWebSecurityHeaders'
+import smartRouterPkgs from '@pancakeswap/smart-router/package.json' with { type: 'json' }
+import { withSentryConfig } from '@sentry/nextjs'
 import { createVanillaExtractPlugin } from '@vanilla-extract/next-plugin'
-import NextTranspileModules from 'next-transpile-modules'
+import vercelToolbarPlugin from '@vercel/toolbar/plugins/next'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import { RetryChunkLoadPlugin } from 'webpack-retry-chunk-load-plugin'
+
+const withVercelToolbar = vercelToolbarPlugin()
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const withBundleAnalyzer = BundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
 })
-
-const withTM = NextTranspileModules([
-  '@pancakeswap/ui',
-  '@pancakeswap/uikit',
-  '@pancakeswap/swap-sdk-core',
-  '@pancakeswap/farms',
-  '@pancakeswap/localization',
-  '@pancakeswap/hooks',
-  '@pancakeswap/multicall',
-  '@pancakeswap/token-lists',
-  '@pancakeswap/utils',
-  '@pancakeswap/tokens',
-  '@pancakeswap/smart-router',
-])
 
 const withVanillaExtract = createVanillaExtractPlugin()
 
@@ -33,52 +27,107 @@ const sentryWebpackPluginOptions =
         // recommended:
         //   release, url, org, project, authToken, configFile, stripPrefix,
         //   urlPrefix, include, ignore
-        silent: false, // Logging when deploying to check if there is any problem
+        silent: true, // Logging when deploying to check if there is any problem
         validate: true,
-        // For all available options, see:
+        hideSourceMaps: false,
+        tryRun: true,
+        disable: true
         // https://github.com/getsentry/sentry-webpack-plugin#options.
       }
     : {
+        hideSourceMaps: false,
         silent: true, // Suppresses all logs
         dryRun: !process.env.SENTRY_AUTH_TOKEN,
       }
 
+const workerDeps = Object.keys(smartRouterPkgs.dependencies)
+  .map((d) => d.replace('@pancakeswap/', 'packages/'))
+  .concat(['/packages/smart-router/', '/packages/swap-sdk/', '/packages/token-lists/'])
+
 /** @type {import('next').NextConfig} */
 const config = {
+  typescript: {
+    tsconfigPath: 'tsconfig.json',
+  },
   compiler: {
     styledComponents: true,
   },
   experimental: {
     scrollRestoration: true,
+    fallbackNodePolyfills: false,
+    outputFileTracingRoot: path.join(__dirname, '../../'),
+    outputFileTracingExcludes: {
+      '*': [],
+    },
+    optimizePackageImports: ['@pancakeswap/widgets-internal', '@pancakeswap/uikit'],
   },
+  transpilePackages: [
+    '@pancakeswap/farms',
+    '@pancakeswap/position-managers',
+    '@pancakeswap/localization',
+    '@pancakeswap/hooks',
+    '@pancakeswap/utils',
+    '@pancakeswap/widgets-internal',
+    '@pancakeswap/ifos',
+    '@pancakeswap/uikit',
+    // https://github.com/TanStack/query/issues/6560#issuecomment-1975771676
+    '@tanstack/query-core',
+  ],
   reactStrictMode: true,
-  swcMinify: true,
+  swcMinify: false,
   images: {
+    contentDispositionType: 'attachment',
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'static-nft.pancakeswap.com',
+        pathname: '/mainnet/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'assets.pancakeswap.finance',
+        pathname: '/web/**',
       },
     ],
   },
   async rewrites() {
-    return [
-      {
-        source: '/info/token/:address',
-        destination: '/info/tokens/:address',
-      },
-      {
-        source: '/info/pool/:address',
-        destination: '/info/pools/:address',
-      },
-      {
-        source: '/info/pair/:address',
-        destination: '/info/pools/:address',
-      },
-    ]
+    return {
+      afterFiles: [
+        {
+          source: '/info/token/:address',
+          destination: '/info/tokens/:address',
+        },
+        {
+          source: '/info/pool/:address',
+          destination: '/info/pools/:address',
+        },
+        {
+          source: '/.well-known/vercel/flags',
+          destination: '/api/vercel/flags',
+        },
+      ],
+    }
   },
   async headers() {
     return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin-allow-popups',
+          },
+        ],
+      },
+      {
+        source: '/favicon.ico',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, immutable, max-age=31536000',
+          },
+        ],
+      },
       {
         source: '/logo.png',
         headers: [
@@ -116,11 +165,6 @@ const config = {
         permanent: true,
       },
       {
-        source: '/swap/:outputCurrency',
-        destination: '/swap?outputCurrency=:outputCurrency',
-        permanent: true,
-      },
-      {
         source: '/create/:currency*',
         destination: '/add/:currency*',
         permanent: true,
@@ -150,9 +194,29 @@ const config = {
         destination: '/nfts',
         permanent: true,
       },
+      {
+        source: '/info/pools',
+        destination: '/info/pairs',
+        permanent: true,
+      },
+      {
+        source: '/info/pools/:address',
+        destination: '/info/pairs/:address',
+        permanent: true,
+      },
+      {
+        source: '/images/tokens/:address',
+        destination: 'https://tokens.pancakeswap.finance/images/:address',
+        permanent: false,
+      },
+      {
+        source: '/swap',
+        destination: '/',
+        permanent: true,
+      },
     ]
   },
-  webpack: (webpackConfig, { webpack }) => {
+  webpack: (webpackConfig, { webpack, isServer }) => {
     // tree shake sentry tracing
     webpackConfig.plugins.push(
       new webpack.DefinePlugin({
@@ -160,10 +224,36 @@ const config = {
         __SENTRY_TRACING__: false,
       }),
     )
+    webpackConfig.plugins.push(
+      new RetryChunkLoadPlugin({
+        cacheBust: `function() {
+          return 'cache-bust=' + Date.now();
+        }`,
+        retryDelay: `function(retryAttempt) {
+          return 2 ** (retryAttempt - 1) * 500;
+        }`,
+        maxRetries: 5,
+      }),
+    )
+    if (!isServer && webpackConfig.optimization.splitChunks) {
+      // webpack doesn't understand worker deps on quote worker, so we need to manually add them
+      // https://github.com/webpack/webpack/issues/16895
+      // eslint-disable-next-line no-param-reassign
+      webpackConfig.optimization.splitChunks.cacheGroups.workerChunks = {
+        chunks: 'all',
+        test(module) {
+          const resource = module.nameForCondition?.() ?? ''
+          return resource ? workerDeps.some((d) => resource.includes(d)) : false
+        },
+        priority: 31,
+        name: 'worker-chunks',
+        reuseExistingChunk: true,
+      }
+    }
     return webpackConfig
   },
 }
 
-export default withBundleAnalyzer(
-  withVanillaExtract(withSentryConfig(withTM(withAxiom(config)), sentryWebpackPluginOptions)),
+export default withVercelToolbar(
+  withBundleAnalyzer(withVanillaExtract(withSentryConfig(withWebSecurityHeaders(config)), sentryWebpackPluginOptions)),
 )

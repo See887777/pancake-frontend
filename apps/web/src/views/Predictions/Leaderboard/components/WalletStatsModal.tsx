@@ -1,44 +1,45 @@
+import { Token } from '@pancakeswap/sdk'
 import {
   Box,
   CloseIcon,
   Flex,
   Grid,
-  Text,
+  Heading,
   IconButton,
   InjectedModalProps,
-  LinkExternal,
-  ModalContainer,
   ModalHeader,
+  ModalWrapper,
   ProfileAvatar,
+  ScanLink,
   Skeleton,
-  Heading,
+  Text,
   useMatchBreakpoints,
 } from '@pancakeswap/uikit'
-import { useProfileForAddress } from 'state/profile/hooks'
-import useTheme from 'hooks/useTheme'
-import styled from 'styled-components'
-import { getBlockExploreLink } from 'utils'
 import truncateHash from '@pancakeswap/utils/truncateHash'
-import { Token } from '@pancakeswap/sdk'
+import useTheme from 'hooks/useTheme'
+import { useProfileForAddress } from 'state/profile/hooks'
+import { styled } from 'styled-components'
+import { getBlockExploreLink } from 'utils'
 
 import { useTranslation } from '@pancakeswap/localization'
-import { FetchStatus } from 'config/constants/types'
+import { FetchStatus, TFetchStatus } from 'config/constants/types'
+import { useDomainNameForAddress } from 'hooks/useDomain'
 import { PredictionUser } from 'state/types'
-import { NetWinningsView } from './Results/styles'
 import MobileBetsTable from './MobileBetsTable'
 import DesktopBetsTable from './Results/DesktopBetsTable'
+import { NetWinningsView } from './Results/styles'
 
 interface WalletStatsModalProps extends InjectedModalProps {
   account?: string
   onBeforeDismiss?: () => void
   address: string
   result: PredictionUser
-  leaderboardLoadingState: FetchStatus
-  token: Token
+  leaderboardLoadingState: TFetchStatus
+  token: Token | undefined
   api: string
 }
 
-const ExternalLink = styled(LinkExternal)`
+const StyledScanLink = styled(ScanLink)`
   color: ${({ theme }) => theme.colors.text};
 
   svg {
@@ -57,7 +58,8 @@ const WalletStatsModal: React.FC<React.PropsWithChildren<WalletStatsModalProps>>
 }) => {
   const { t } = useTranslation()
   const { theme } = useTheme()
-  const { profile } = useProfileForAddress(address)
+  const { profile, isLoading: isProfileLoading } = useProfileForAddress(address)
+  const { domainName, avatar } = useDomainNameForAddress(address, !profile && !isProfileLoading)
   const isLoading = leaderboardLoadingState === FetchStatus.Fetching
   const { isDesktop } = useMatchBreakpoints()
 
@@ -70,11 +72,11 @@ const WalletStatsModal: React.FC<React.PropsWithChildren<WalletStatsModalProps>>
   }
 
   return (
-    <ModalContainer $minWidth="320px">
+    <ModalWrapper minWidth="320px">
       <ModalHeader background={theme.colors.gradientBubblegum}>
         <Flex alignItems="center" style={{ flex: 1 }}>
           <Box width={['64px', null, null, null, null, null, '96px']} mr="16px">
-            <ProfileAvatar src={profile?.nft?.image?.thumbnail} height={96} width={96} />
+            <ProfileAvatar src={profile?.nft?.image?.thumbnail ?? avatar} height={96} width={96} />
           </Box>
           <Box>
             {profile?.username && (
@@ -82,7 +84,9 @@ const WalletStatsModal: React.FC<React.PropsWithChildren<WalletStatsModalProps>>
                 {profile?.username}
               </Heading>
             )}
-            <ExternalLink href={getBlockExploreLink(address, 'address')}>{truncateHash(address)}</ExternalLink>
+            <StyledScanLink href={getBlockExploreLink(address, 'address', token?.chainId)}>
+              {domainName || truncateHash(address)}
+            </StyledScanLink>
           </Box>
         </Flex>
         <IconButton variant="text" onClick={handleDismiss} aria-label="Close the dialog">
@@ -135,13 +139,13 @@ const WalletStatsModal: React.FC<React.PropsWithChildren<WalletStatsModalProps>>
               <Text as="h6" fontSize="12px" textTransform="uppercase" color="textSubtle" fontWeight="bold" mb="8px">
                 {t('Rounds Won')}
               </Text>
-              {isLoading ? <Skeleton /> : <Text fontWeight="bold">{result?.totalBetsClaimed?.toLocaleString()}</Text>}
+              {isLoading ? <Skeleton /> : <Text fontWeight="bold">{result?.totalBetsClaimed}</Text>}
             </Box>
             <Box>
               <Text as="h6" fontSize="12px" textTransform="uppercase" color="textSubtle" fontWeight="bold" mb="8px">
                 {t('Rounds Played')}
               </Text>
-              {isLoading ? <Skeleton /> : <Text fontWeight="bold">{result?.totalBets?.toLocaleString()}</Text>}
+              {isLoading ? <Skeleton /> : <Text fontWeight="bold">{result?.totalBets}</Text>}
             </Box>
           </Grid>
           {isDesktop ? (
@@ -151,7 +155,7 @@ const WalletStatsModal: React.FC<React.PropsWithChildren<WalletStatsModalProps>>
           )}
         </Box>
       )}
-    </ModalContainer>
+    </ModalWrapper>
   )
 }
 

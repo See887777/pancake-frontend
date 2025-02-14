@@ -1,41 +1,44 @@
-import { useState } from 'react'
+import { useTranslation } from '@pancakeswap/localization'
 import {
   AutoRenewIcon,
+  Button,
   Card,
   CardHeader,
   ChevronDownIcon,
+  ChevronUpIcon,
   Flex,
   Heading,
-  Button,
-  ChevronUpIcon,
+  useMatchBreakpoints,
 } from '@pancakeswap/uikit'
-import { useAccount } from 'wagmi'
+import { FetchStatus, TFetchStatus } from 'config/constants/types'
 import orderBy from 'lodash/orderBy'
-import { useTranslation } from '@pancakeswap/localization'
-import { Vote } from 'state/types'
-import { FetchStatus } from 'config/constants/types'
-import VotesLoading from '../components/Proposal/VotesLoading'
+import { useState } from 'react'
+import { Proposal, Vote } from 'state/types'
+import { useAccount } from 'wagmi'
 import VoteRow from '../components/Proposal/VoteRow'
-
-const VOTES_PER_VIEW = 20
+import VotesLoading from '../components/Proposal/VotesLoading'
 
 interface VotesProps {
   votes: Vote[]
+  proposal: Proposal
   totalVotes?: number
-  votesLoadingStatus: FetchStatus
+  votesLoadingStatus: TFetchStatus
 }
 
 const parseVotePower = (incomingVote: Vote) => {
-  let votingPower = parseFloat(incomingVote?.metadata?.votingPower)
+  let votingPower = incomingVote?.metadata?.votingPower && parseFloat(incomingVote?.metadata?.votingPower)
   if (!votingPower) votingPower = 0
   return votingPower
 }
 
-const Votes: React.FC<React.PropsWithChildren<VotesProps>> = ({ votes, votesLoadingStatus, totalVotes }) => {
+const Votes: React.FC<React.PropsWithChildren<VotesProps>> = ({ votes, proposal, votesLoadingStatus, totalVotes }) => {
   const [showAll, setShowAll] = useState(false)
+  const { isMobile } = useMatchBreakpoints()
   const { t } = useTranslation()
   const { address: account } = useAccount()
   const orderedVotes = orderBy(votes, [parseVotePower, 'created'], ['desc', 'desc'])
+
+  const VOTES_PER_VIEW = isMobile ? 10 : 20
   const displayVotes = showAll ? orderedVotes : orderedVotes.slice(0, VOTES_PER_VIEW)
   const isFetched = votesLoadingStatus === FetchStatus.Fetched
 
@@ -45,10 +48,10 @@ const Votes: React.FC<React.PropsWithChildren<VotesProps>> = ({ votes, votesLoad
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader style={{ background: 'transparent' }}>
         <Flex alignItems="center" justifyContent="space-between">
           <Heading as="h3" scale="md">
-            {t('Votes (%count%)', { count: totalVotes ? totalVotes.toLocaleString() : '-' })}
+            {t('Votes (%count%)', { count: totalVotes || '-' })}
           </Heading>
           {!isFetched && <AutoRenewIcon spin width="22px" />}
         </Flex>
@@ -59,7 +62,7 @@ const Votes: React.FC<React.PropsWithChildren<VotesProps>> = ({ votes, votesLoad
         <>
           {displayVotes.map((vote) => {
             const isVoter = account && vote.voter.toLowerCase() === account.toLowerCase()
-            return <VoteRow key={vote.id} vote={vote} isVoter={isVoter} />
+            return <VoteRow key={vote.id} vote={vote} isVoter={Boolean(isVoter)} proposal={proposal} />
           })}
           <Flex alignItems="center" justifyContent="center" py="8px" px="24px">
             <Button

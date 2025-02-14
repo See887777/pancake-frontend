@@ -1,35 +1,30 @@
+import { useUserCakeLockStatus } from 'hooks/useUserCakeLockStatus'
 import { useMemo } from 'react'
-import { ChainId } from '@pancakeswap/sdk'
-import { useActiveIfoWithBlocks } from 'hooks/useActiveIfoWithBlocks'
-import { useChainCurrentBlock } from 'state/block/hooks'
-import { PotteryDepositStatus } from 'state/types'
-import { getStatus } from 'views/Ifos/hooks/helpers'
-import { usePotteryStatus } from './usePotteryStatus'
 import { useCompetitionStatus } from './useCompetitionStatus'
 import { useVotingStatus } from './useVotingStatus'
+import { useTradingRewardStatus } from './useTradingRewardStatus'
+import { useIfoStatus } from './useIfoStatus'
 
 export const useMenuItemsStatus = (): Record<string, string> => {
-  const currentBlock = useChainCurrentBlock(ChainId.BSC)
-  const activeIfo = useActiveIfoWithBlocks()
+  const ifoStatus = useIfoStatus()
   const competitionStatus = useCompetitionStatus()
-  const potteryStatus = usePotteryStatus()
   const votingStatus = useVotingStatus()
-
-  const ifoStatus =
-    currentBlock && activeIfo && activeIfo.endBlock > currentBlock
-      ? getStatus(currentBlock, activeIfo.startBlock, activeIfo.endBlock)
-      : null
+  const isUserLocked = useUserCakeLockStatus()
+  const tradingRewardStatus = useTradingRewardStatus()
 
   return useMemo(() => {
     return {
-      '/competition': competitionStatus,
-      '/ifo': ifoStatus === 'coming_soon' ? 'soon' : ifoStatus,
-      ...(potteryStatus === PotteryDepositStatus.BEFORE_LOCK && {
-        '/pottery': 'pot_open',
-      }),
+      '/competition': competitionStatus || '',
+      '/ifo': ifoStatus || '',
       ...(votingStatus && {
-        '/voting': 'vote_now',
+        '/voting': votingStatus,
+      }),
+      ...(isUserLocked && {
+        '/pools': 'lock_end',
+      }),
+      ...(tradingRewardStatus && {
+        '/trading-reward': tradingRewardStatus,
       }),
     }
-  }, [competitionStatus, ifoStatus, potteryStatus, votingStatus])
+  }, [competitionStatus, ifoStatus, votingStatus, isUserLocked, tradingRewardStatus])
 }

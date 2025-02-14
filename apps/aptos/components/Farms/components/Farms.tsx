@@ -1,40 +1,41 @@
-import { useEffect, useCallback, useState, useMemo, useRef, createContext } from 'react'
-import { useTranslation } from '@pancakeswap/localization'
-import BigNumber from 'bignumber.js'
-import { useRouter } from 'next/router'
 import { useAccount } from '@pancakeswap/awgmi'
-import { useIsMounted } from '@pancakeswap/hooks'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { useCakePriceAsBigNumber } from 'hooks/useStablePrice'
-import {
-  Image,
-  Heading,
-  Toggle,
-  Text,
-  Flex,
-  Box,
-  PageHeader,
-  FlexLayout,
-  Select,
-  OptionProps,
-  Loading,
-  SearchInput,
-  Farm as FarmUI,
-} from '@pancakeswap/uikit'
-import styled from 'styled-components'
-import orderBy from 'lodash/orderBy'
-import Page from 'components/Layout/Page'
-import ToggleView from 'components/ToggleView/ToggleView'
-import { useFarmViewMode, ViewMode, useFarmsStakedOnly } from 'state/user'
-import NoSSR from 'components/NoSSR'
-
-import { useFarms } from 'state/farms/hook'
-import useIntersectionObserver from 'hooks/useIntersectionObserver'
-import { getFarmApr } from 'utils/farmApr'
-import { latinise } from 'utils/latinise'
 import type { DeserializedFarm } from '@pancakeswap/farms'
+import { FarmWithStakedValue, filterFarmsByQuery } from '@pancakeswap/farms'
+import { useIntersectionObserver } from '@pancakeswap/hooks'
+import { useTranslation } from '@pancakeswap/localization'
+import {
+  Box,
+  Flex,
+  FlexLayout,
+  Heading,
+  Image,
+  Loading,
+  OptionProps,
+  PageHeader,
+  SearchInput,
+  Select,
+  Text,
+  Toggle,
+  ToggleView,
+} from '@pancakeswap/uikit'
+import { FarmWidget } from '@pancakeswap/widgets-internal'
+import BigNumber from 'bignumber.js'
+import { AptosYieldFarmingBanner } from 'components/Banner/AptosYieldFarmingBanner'
+import useLpRewardsAprs from 'components/Farms/hooks/useLpRewardsAprs'
+import Page from 'components/Layout/Page'
+import NoSSR from 'components/NoSSR'
+import { APT } from 'config/coins'
+import { useActiveChainId } from 'hooks/useNetwork'
+import { usePriceCakeUsdc, useTokenUsdcPrice } from 'hooks/useStablePrice'
+import orderBy from 'lodash/orderBy'
+import { useRouter } from 'next/router'
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useFarms } from 'state/farms/hook'
+import { calcPendingRewardApt } from 'state/farms/utils/pendingApt'
+import { ViewMode, useFarmViewMode, useFarmsStakedOnly } from 'state/user'
+import { styled } from 'styled-components'
+import { getFarmApr } from 'utils/farmApr'
 import Table from './FarmTable/FarmTable'
-import { FarmWithStakedValue } from './types'
 
 const ControlContainer = styled.div`
   display: flex;
@@ -135,14 +136,22 @@ const NUMBER_OF_FARMS_VISIBLE = 12
 
 const Farms: React.FC<React.PropsWithChildren> = ({ children }) => {
   const { t } = useTranslation()
-  const isMounted = useIsMounted()
-  const { chainId } = useActiveWeb3React()
-  const cakePrice = useCakePriceAsBigNumber()
+  const chainId = useActiveChainId()
+  const cakePrice = usePriceCakeUsdc()
+  const aptPrice = useTokenUsdcPrice(APT[chainId])
   const { pathname, query: urlQuery } = useRouter()
   const [viewMode, setViewMode] = useFarmViewMode()
   const [stakedOnly, setStakedOnly] = useFarmsStakedOnly()
   const [numberOfFarmsVisible, setNumberOfFarmsVisible] = useState(NUMBER_OF_FARMS_VISIBLE)
-  const { data: farmsLP, userDataLoaded, poolLength, regularCakePerBlock } = useFarms()
+  const {
+    data: farmsLP,
+    userDataLoaded,
+    poolLength,
+    regularCakePerBlock,
+    totalRegularAllocPoint,
+    cakePerBlock,
+  } = useFarms()
+  const lpRewardsAprs = useLpRewardsAprs()
 
   const [_query, setQuery] = useState('')
   const normalizedUrlSearch = useMemo(() => (typeof urlQuery?.search === 'string' ? urlQuery.search : ''), [urlQuery])
@@ -162,9 +171,14 @@ const Farms: React.FC<React.PropsWithChildren> = ({ children }) => {
   const userDataReady = !account || (!!account && userDataLoaded)
 
   const activeFarms = farmsLP?.filter(
-    (farm) => farm.pid !== 0 && farm.multiplier !== '0X' && (!poolLength || poolLength > farm.pid),
+    (farm) =>
+      farm.pid !== 0 &&
+      (farm.multiplier !== '0X' || farm?.bCakeWrapperAddress) &&
+      (!poolLength || poolLength > farm.pid),
   )
-  const inactiveFarms = farmsLP?.filter((farm) => farm.pid !== 0 && farm.multiplier === '0X')
+  const inactiveFarms = farmsLP?.filter(
+    (farm) => farm.pid !== 0 && farm.multiplier === '0X' && !farm?.bCakeWrapperAddress,
+  )
   const archivedFarms = farmsLP
 
   const stakedOnlyFarms = activeFarms?.filter(
@@ -181,35 +195,39 @@ const Farms: React.FC<React.PropsWithChildren> = ({ children }) => {
 
   const farmsList = useCallback(
     (farmsToDisplay: DeserializedFarm[]): FarmWithStakedValue[] => {
-      let farmsToDisplayWithAPR: FarmWithStakedValue[] = farmsToDisplay?.map((farm) => {
+      const farmsToDisplayWithAPR: FarmWithStakedValue[] = farmsToDisplay?.map((farm) => {
         if (!farm.lpTotalInQuoteToken || !farm.quoteTokenPriceBusd) {
           return farm
         }
         const totalLiquidity = new BigNumber(farm.lpTotalInQuoteToken).times(farm.quoteTokenPriceBusd)
-        const { cakeRewardsApr, lpRewardsApr } = isActive
-          ? getFarmApr(
-              chainId,
-              new BigNumber(farm.poolWeight ?? 0),
-              cakePrice,
-              totalLiquidity,
-              farm.lpAddress,
-              regularCakePerBlock,
-            )
-          : { cakeRewardsApr: 0, lpRewardsApr: 0 }
+        const { cakeRewardsApr } = isActive
+          ? getFarmApr(new BigNumber(farm.poolWeight ?? 0), cakePrice, totalLiquidity, regularCakePerBlock ?? 0)
+          : { cakeRewardsApr: 0 }
 
-        return { ...farm, apr: cakeRewardsApr, lpRewardsApr, liquidity: totalLiquidity }
+        const lpRewardsApr = lpRewardsAprs?.[farm.lpAddress?.toLowerCase()] ?? 0
+
+        const dualTokenRewardApr = isActive
+          ? calcPendingRewardApt(
+              new BigNumber(farm.poolWeight ?? 0),
+              regularCakePerBlock ?? 0,
+              aptPrice,
+              farm?.dual?.aptIncentiveInfo ?? 0,
+              totalLiquidity,
+            )
+          : 0
+
+        return {
+          ...farm,
+          apr: cakeRewardsApr,
+          lpRewardsApr,
+          liquidity: totalLiquidity,
+          dualTokenRewardApr,
+        }
       })
 
-      if (query) {
-        const lowercaseQuery = latinise(query.toLowerCase())
-        farmsToDisplayWithAPR = farmsToDisplayWithAPR.filter((farm: FarmWithStakedValue) => {
-          return latinise(farm.lpSymbol.toLowerCase()).includes(lowercaseQuery)
-        })
-      }
-
-      return farmsToDisplayWithAPR
+      return filterFarmsByQuery(farmsToDisplayWithAPR, query)
     },
-    [query, isActive, chainId, cakePrice, regularCakePerBlock],
+    [query, isActive, cakePrice, aptPrice, regularCakePerBlock, lpRewardsAprs],
   )
 
   const handleChangeQuery = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -289,10 +307,13 @@ const Farms: React.FC<React.PropsWithChildren> = ({ children }) => {
   const handleSortOptionChange = (option: OptionProps): void => {
     setSortOption(option.value)
   }
-
+  const providerValue = useMemo(() => ({ chosenFarmsMemoized }), [chosenFarmsMemoized])
   return (
-    <FarmsContext.Provider value={{ chosenFarmsMemoized }}>
+    <FarmsContext.Provider value={providerValue}>
       <PageHeader>
+        <Box mb="32px" mt="16px">
+          <AptosYieldFarmingBanner />
+        </Box>
         <FarmFlexWrapper justifyContent="space-between">
           <Box>
             <FarmH1 as="h1" scale="xxl" color="secondary" mb="24px">
@@ -307,19 +328,23 @@ const Farms: React.FC<React.PropsWithChildren> = ({ children }) => {
       <Page title={t('Farms')}>
         <ControlContainer>
           <ViewControls>
-            <ToggleWrapper>
+            <Flex mt="20px">
               <NoSSR>
                 <ToggleView idPrefix="clickFarm" viewMode={viewMode} onToggle={setViewMode} />
               </NoSSR>
-              <Toggle
-                id="staked-only-farms"
-                scale="sm"
-                checked={stakedOnly}
-                onChange={() => setStakedOnly(!stakedOnly)}
-              />
-              <Text>{t('Staked only')}</Text>
-            </ToggleWrapper>
-            <FarmUI.FarmTabButtons hasStakeInFinishedFarms={stakedInactiveFarms?.length > 0} />
+            </Flex>
+            <FarmWidget.FarmTabButtons hasStakeInFinishedFarms={stakedInactiveFarms?.length > 0} />
+            <Flex mt="20px">
+              <ToggleWrapper>
+                <Toggle
+                  id="staked-only-farms"
+                  scale="sm"
+                  checked={stakedOnly}
+                  onChange={() => setStakedOnly(!stakedOnly)}
+                />
+                <Text>{t('Staked only')}</Text>
+              </ToggleWrapper>
+            </Flex>
           </ViewControls>
           <FilterContainer>
             <LabelWrapper>
@@ -362,7 +387,13 @@ const Farms: React.FC<React.PropsWithChildren> = ({ children }) => {
         </ControlContainer>
         <NoSSR>
           {viewMode === ViewMode.TABLE ? (
-            <Table farms={chosenFarmsMemoized} cakePrice={cakePrice} userDataReady={userDataReady} />
+            <Table
+              farms={chosenFarmsMemoized}
+              cakePrice={cakePrice}
+              userDataReady={userDataReady}
+              totalRegularAllocPoint={totalRegularAllocPoint}
+              cakePerBlock={cakePerBlock}
+            />
           ) : (
             <FlexLayout>{children}</FlexLayout>
           )}

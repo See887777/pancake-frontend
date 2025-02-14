@@ -1,45 +1,39 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useTranslation } from '@pancakeswap/localization'
+import { BetPosition } from '@pancakeswap/prediction'
 import {
   ArrowBackIcon,
+  AutoRenewIcon,
+  BalanceInput,
+  Box,
+  Button,
   Card,
   CardBody,
   CardHeader,
   Flex,
   Heading,
   IconButton,
-  Button,
-  BinanceIcon,
-  LogoIcon,
-  Text,
-  BalanceInput,
   Slider,
-  Box,
-  AutoRenewIcon,
+  Text,
 } from '@pancakeswap/uikit'
-import { BigNumber, FixedNumber } from '@ethersproject/bignumber'
-import { Zero } from '@ethersproject/constants'
-import { parseUnits } from '@ethersproject/units'
-import { useAccount } from 'wagmi'
-import { useGetMinBetAmount } from 'state/predictions/hooks'
-import { useTranslation } from '@pancakeswap/localization'
-import { usePredictionsContract } from 'hooks/useContract'
-import { useGetBnbBalance, useGetCakeBalance } from 'hooks/useTokenBalance'
-import { useCallWithGasPrice } from 'hooks/useCallWithGasPrice'
-import useCatchTxError from 'hooks/useCatchTxError'
-import { BetPosition } from 'state/types'
-import { formatBigNumber, formatFixedNumber } from '@pancakeswap/utils/formatBalance'
+import { formatBigInt, formatNumber, getFullDisplayBalance } from '@pancakeswap/utils/formatBalance'
+import BN from 'bignumber.js'
 import ConnectWalletButton from 'components/ConnectWalletButton'
-import { useConfig } from 'views/Predictions/context/ConfigProvider'
+import { TokenImage } from 'components/TokenImage'
 import useCakeApprovalStatus from 'hooks/useCakeApprovalStatus'
 import useCakeApprove from 'hooks/useCakeApprove'
+import { useCallWithGasPrice } from 'hooks/useCallWithGasPrice'
+import useCatchTxError from 'hooks/useCatchTxError'
+import { usePredictionsContract } from 'hooks/useContract'
+import { useGetNativeTokenBalance, useTokenBalanceByChain } from 'hooks/useTokenBalance'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useGetMinBetAmount } from 'state/predictions/hooks'
+import { Address, parseUnits } from 'viem'
+import { useConfig } from 'views/Predictions/context/ConfigProvider'
+import { useAccount } from 'wagmi'
 
-import PositionTag from '../PositionTag'
+import { useCurrencyUsdPrice } from 'hooks/useCurrencyUsdPrice'
 import FlexRow from '../FlexRow'
-
-const LOGOS = {
-  BNB: BinanceIcon,
-  CAKE: LogoIcon,
-}
+import PositionTag from '../PositionTag'
 
 interface SetPositionCardProps {
   position: BetPosition
@@ -52,33 +46,28 @@ interface SetPositionCardProps {
 const dust = parseUnits('0.001', 18)
 const percentShortcuts = [10, 25, 50, 75]
 
-const getButtonProps = (value: BigNumber, bnbBalance: BigNumber, minBetAmountBalance: BigNumber) => {
+const getButtonProps = (value: bigint, bnbBalance: bigint, minBetAmountBalance: bigint) => {
   const hasSufficientBalance = () => {
-    if (value.gt(0)) {
-      return value.lte(bnbBalance)
+    if (value > 0) {
+      return value <= bnbBalance
     }
-    return bnbBalance.gt(0)
+    return bnbBalance > 0
   }
 
   if (!hasSufficientBalance()) {
     return { key: 'Insufficient %symbol% balance', disabled: true }
   }
 
-  if (value.eq(0)) {
+  if (value === 0n) {
     return { key: 'Enter an amount', disabled: true }
   }
 
-  return { key: 'Confirm', disabled: value.lt(minBetAmountBalance) }
+  return { key: 'Confirm', disabled: value < minBetAmountBalance }
 }
 
 const getValueAsEthersBn = (value: string) => {
   const valueAsFloat = parseFloat(value)
-  return Number.isNaN(valueAsFloat) ? Zero : parseUnits(value)
-}
-
-const TOKEN_BALANCE_CONFIG = {
-  BNB: useGetBnbBalance,
-  CAKE: useGetCakeBalance,
+  return Number.isNaN(valueAsFloat) ? 0n : parseUnits(value as `${number}`, 18)
 }
 
 const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> = ({
@@ -89,7 +78,7 @@ const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> =
   onSuccess,
 }) => {
   const [value, setValue] = useState('')
-  const [errorMessage, setErrorMessage] = useState(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [percent, setPercent] = useState(0)
 
   const { address: account } = useAccount()
@@ -97,43 +86,61 @@ const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> =
   const { t } = useTranslation()
   const { fetchWithCatchTxError, loading: isTxPending } = useCatchTxError()
   const { callWithGasPrice } = useCallWithGasPrice()
-  const { address: predictionsAddress, token } = useConfig()
-  const predictionsContract = usePredictionsContract(predictionsAddress, token.symbol)
-  const useTokenBalance = useMemo(() => {
-    return TOKEN_BALANCE_CONFIG[token.symbol]
-  }, [token.symbol])
 
-  const { isVaultApproved, setLastUpdated } = useCakeApprovalStatus(token.symbol === 'CAKE' ? predictionsAddress : null)
+  const config = useConfig()
+  const predictionsAddress = config?.address ?? '0x'
+  const isNativeToken = config?.isNativeToken ?? false
+  const tokenSymbol = config?.token?.symbol ?? ''
+
+  const predictionsContract = usePredictionsContract(predictionsAddress, isNativeToken)
+
+  const { setLastUpdated, allowance } = useCakeApprovalStatus(config?.isNativeToken ? null : predictionsAddress)
   const { handleApprove, pendingTx } = useCakeApprove(
     setLastUpdated,
     predictionsAddress,
     t('You can now start prediction'),
   )
 
-  // BNB prediction doesn't need approval
-  const doesCakeApprovePrediction = token.symbol === 'BNB' || isVaultApproved
+  const { balance: userBalance } = useTokenBalanceByChain(config?.token?.address as Address)
+  const { balance: userNativeTokenBalance } = useGetNativeTokenBalance()
 
-  const { balance: bnbBalance } = useTokenBalance()
+  const balance = useMemo(() => {
+    if (isNativeToken) {
+      return BigInt(userNativeTokenBalance.toString()) ?? 0n
+    }
+    return BigInt(userBalance.toString()) ?? 0n
+  }, [isNativeToken, userNativeTokenBalance, userBalance])
 
-  const maxBalance = useMemo(() => {
-    return bnbBalance.gt(dust) ? bnbBalance.sub(dust) : Zero
-  }, [bnbBalance])
-  const balanceDisplay = formatBigNumber(bnbBalance)
+  const maxBalance = useMemo(() => (balance > dust ? balance - dust : 0n), [balance])
+  const balanceDisplay = formatBigInt(balance, config?.token?.decimals, config?.token?.decimals)
 
   const valueAsBn = getValueAsEthersBn(value)
-  const showFieldWarning = account && valueAsBn.gt(0) && errorMessage !== null
+  const showFieldWarning = account && valueAsBn > 0n && errorMessage !== null
+
+  const { data: tokenPrice } = useCurrencyUsdPrice(config?.token)
+  const usdValue = useMemo(() => {
+    if (!tokenPrice || !Number(value)) return ''
+
+    const rawUsdValue = new BN(value).times(tokenPrice)
+    if (rawUsdValue.isNaN()) return ''
+
+    return `~$${formatNumber(rawUsdValue.toNumber(), 2, 4)}`
+  }, [tokenPrice, value])
+
+  // Native Token prediction doesn't need approval
+  const doesCakeApprovePrediction = isNativeToken || allowance.gte(valueAsBn.toString())
 
   const handleInputChange = (input: string) => {
     const inputAsBn = getValueAsEthersBn(input)
 
-    if (inputAsBn.eq(0)) {
+    if (inputAsBn === 0n) {
       setPercent(0)
     } else {
-      const inputAsFn = FixedNumber.from(inputAsBn)
-      const maxValueAsFn = FixedNumber.from(maxBalance)
-      const hundredAsFn = FixedNumber.from(100)
-      const percentage = inputAsFn.divUnsafe(maxValueAsFn).mulUnsafe(hundredAsFn)
-      const percentageAsFloat = percentage.toUnsafeFloat()
+      const inputAsFn = new BN(inputAsBn.toString())
+      const maxValueAsFn = new BN(maxBalance.toString())
+      const hundredAsFn = new BN(100)
+      const percentage = inputAsFn.div(maxValueAsFn).times(hundredAsFn)
+      const percentageAsFloat = percentage.toNumber()
 
       setPercent(percentageAsFloat > 100 ? 100 : percentageAsFloat)
     }
@@ -143,11 +150,11 @@ const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> =
   const handlePercentChange = useCallback(
     (sliderPercent: number) => {
       if (sliderPercent > 0) {
-        const maxValueAsFn = FixedNumber.from(maxBalance)
-        const hundredAsFn = FixedNumber.from(100)
-        const sliderPercentAsFn = FixedNumber.from(sliderPercent.toFixed(18)).divUnsafe(hundredAsFn)
-        const balancePercentage = maxValueAsFn.mulUnsafe(sliderPercentAsFn)
-        setValue(formatFixedNumber(balancePercentage))
+        const maxValueAsFn = new BN(maxBalance.toString())
+        const hundredAsFn = new BN(100)
+        const sliderPercentAsFn = new BN(sliderPercent.toFixed(18)).div(hundredAsFn)
+        const balancePercentage = maxValueAsFn.times(sliderPercentAsFn)
+        setValue(getFullDisplayBalance(balancePercentage, 18, 18))
       } else {
         setValue('')
       }
@@ -167,18 +174,17 @@ const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> =
 
   const handleEnterPosition = async () => {
     const betMethod = position === BetPosition.BULL ? 'betBull' : 'betBear'
-    const callOptions =
-      token.symbol === 'CAKE'
-        ? {
-            gasLimit: 300000,
-            value: 0,
-          }
-        : { value: valueAsBn.toString() }
+    const callOptions = !isNativeToken
+      ? {
+          gas: 300000n,
+          value: 0n,
+        }
+      : { value: BigInt(valueAsBn.toString()) }
 
-    const args = token.symbol === 'CAKE' ? [epoch, valueAsBn.toString()] : [epoch]
+    const args = !isNativeToken ? [epoch, valueAsBn.toString()] : [epoch]
 
     const receipt = await fetchWithCatchTxError(() => {
-      return callWithGasPrice(predictionsContract, betMethod, args, callOptions)
+      return callWithGasPrice(predictionsContract as any, betMethod, args, callOptions)
     })
     if (receipt?.status) {
       onSuccess(receipt.transactionHash)
@@ -188,22 +194,18 @@ const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> =
   // Warnings
   useEffect(() => {
     const inputAmount = getValueAsEthersBn(value)
-    const hasSufficientBalance = inputAmount.gt(0) && inputAmount.lte(maxBalance)
+    const hasSufficientBalance = inputAmount > 0n && inputAmount <= maxBalance
 
     if (!hasSufficientBalance) {
-      setErrorMessage(t('Insufficient %symbol% balance', { symbol: token.symbol }))
-    } else if (inputAmount.gt(0) && inputAmount.lt(minBetAmount)) {
+      setErrorMessage(t('Insufficient %symbol% balance', { symbol: tokenSymbol }))
+    } else if (inputAmount > 0n && inputAmount < minBetAmount) {
       setErrorMessage(
-        t('A minimum amount of %num% %token% is required', { num: formatBigNumber(minBetAmount), token: token.symbol }),
+        t('A minimum amount of %num% %token% is required', { num: formatBigInt(minBetAmount), token: tokenSymbol }),
       )
     } else {
       setErrorMessage(null)
     }
-  }, [value, maxBalance, minBetAmount, setErrorMessage, t, token.symbol])
-
-  const Logo = useMemo(() => {
-    return LOGOS[token.symbol]
-  }, [token.symbol])
+  }, [value, maxBalance, minBetAmount, setErrorMessage, t, tokenSymbol])
 
   return (
     <Card>
@@ -226,14 +228,23 @@ const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> =
             {t('Commit')}:
           </Text>
           <Flex alignItems="center">
-            <Logo mr="4px" />
+            <Box mr="4px" width={20} height={20}>
+              {config?.token && <TokenImage width={20} height={20} token={config?.token} />}
+            </Box>
             <Text bold textTransform="uppercase">
-              {token.symbol}
+              {tokenSymbol}
             </Text>
           </Flex>
         </Flex>
         <BalanceInput
           value={value}
+          currencyValue={
+            usdValue && (
+              <Text fontSize="12px" textAlign="right" color="textSubtle" ellipsis>
+                {usdValue}
+              </Text>
+            )
+          }
           onUserInput={handleInputChange}
           isWarning={showFieldWarning}
           inputProps={{ disabled: !account || isTxPending }}
@@ -300,7 +311,7 @@ const SetPositionCard: React.FC<React.PropsWithChildren<SetPositionCardProps>> =
                 isLoading={isTxPending}
                 endIcon={isTxPending ? <AutoRenewIcon color="currentColor" spin /> : null}
               >
-                {t(key, { symbol: token.symbol })}
+                {t(key, { symbol: tokenSymbol })}
               </Button>
             ) : (
               <Button

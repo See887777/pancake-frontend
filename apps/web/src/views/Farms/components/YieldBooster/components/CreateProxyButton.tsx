@@ -5,7 +5,7 @@ import useCatchTxError from 'hooks/useCatchTxError'
 import { useBCakeFarmBoosterProxyFactoryContract } from 'hooks/useContract'
 import { memo, useState } from 'react'
 
-const MAX_GAS_LIMIT = 2500000
+const MAX_GAS_LIMIT = 2500000n
 
 interface CreateProxyButtonProps extends ButtonProps {
   onDone?: () => void
@@ -23,10 +23,15 @@ const CreateProxyButton: React.FC<React.PropsWithChildren<CreateProxyButtonProps
       width="100%"
       {...props}
       onClick={async () => {
+        if (!farmBoosterProxyFactoryContract.account) return
         try {
           setIsCreateProxyLoading(true)
           const receipt = await fetchWithCatchTxError(() =>
-            farmBoosterProxyFactoryContract.createFarmBoosterProxy({ gasLimit: MAX_GAS_LIMIT }),
+            farmBoosterProxyFactoryContract.write.createFarmBoosterProxy({
+              gas: MAX_GAS_LIMIT,
+              account: farmBoosterProxyFactoryContract.account!,
+              chain: farmBoosterProxyFactoryContract.chain,
+            }),
           )
           if (receipt?.status) {
             toastSuccess(t('Contract Enabled'), <ToastDescriptionWithTx txHash={receipt.transactionHash} />)

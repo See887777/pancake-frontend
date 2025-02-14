@@ -1,12 +1,15 @@
-import { Pool, useToast } from '@pancakeswap/uikit'
-import { useTranslation } from '@pancakeswap/localization'
-import { useCallback } from 'react'
-import { ToastDescriptionWithTx } from 'components/Toast'
-import useCatchTxError from 'hooks/useCatchTxError'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
+import { useToast } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
+
 import { Coin } from '@pancakeswap/aptos-swap-sdk'
 import { TransactionResponse } from '@pancakeswap/awgmi/dist/core'
+import { useTranslation } from '@pancakeswap/localization'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import { ToastDescriptionWithTx } from 'components/Toast'
+import useActiveWeb3React from 'hooks/useActiveWeb3React'
+import useCatchTxError from 'hooks/useCatchTxError'
+import { useCallback } from 'react'
+import { logGTMPoolStakeEvent } from 'utils/customGTMEventTracking'
 
 const StakeModalContainer = ({
   pool,
@@ -48,6 +51,8 @@ const StakeModalContainer = ({
 
       if (receipt?.status) {
         if (isRemovingStake) {
+          logGTMPoolStakeEvent('unstake', stakingToken?.symbol, stakeAmount)
+
           toastSuccess(
             `${t('Unstaked')}!`,
             <ToastDescriptionWithTx txHash={receipt.transactionHash}>
@@ -57,6 +62,8 @@ const StakeModalContainer = ({
             </ToastDescriptionWithTx>,
           )
         } else {
+          logGTMPoolStakeEvent('stake', stakingToken?.symbol, stakeAmount)
+
           toastSuccess(
             `${t('Staked')}!`,
             <ToastDescriptionWithTx txHash={receipt.transactionHash}>
@@ -67,8 +74,7 @@ const StakeModalContainer = ({
           )
         }
 
-        if (onDone) onDone()
-
+        onDone?.()
         onDismiss?.()
       }
     },
@@ -105,6 +111,7 @@ const StakeModalContainer = ({
       account={account}
       handleConfirmClick={handleConfirmClick}
       isRemovingStake={isRemovingStake}
+      imageUrl="https://tokens.pancakeswap.finance/images/aptos/"
     />
   )
 }

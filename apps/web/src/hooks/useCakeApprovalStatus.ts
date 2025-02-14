@@ -1,29 +1,39 @@
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import BigNumber from 'bignumber.js'
 import { useMemo } from 'react'
+import { Address, erc20Abi } from 'viem'
 import { useAccount } from 'wagmi'
-import { useCake } from 'hooks/useContract'
-import { useSWRContract, UseSWRContractKey } from 'hooks/useSWRContract'
 
-// TODO: refactor as useTokenApprovalStatus for generic use
+import { getCakeContract } from 'utils/contractHelpers'
 
-export const useCakeApprovalStatus = (spender) => {
+import { useReadContract } from '@pancakeswap/wagmi'
+import { useActiveChainId } from './useActiveChainId'
+
+export const useCakeApprovalStatus = (spender: any) => {
   const { address: account } = useAccount()
-  const { reader: cakeContract } = useCake()
+  const { chainId } = useActiveChainId()
+  const cakeContract = useMemo(() => (chainId ? getCakeContract(chainId) : undefined), [chainId])
 
-  const key = useMemo<UseSWRContractKey>(
-    () =>
-      account && spender
-        ? {
-            contract: cakeContract,
-            methodName: 'allowance',
-            params: [account, spender],
-          }
-        : null,
-    [account, cakeContract, spender],
+  const { data, refetch } = useReadContract<typeof erc20Abi, 'allowance', [Address, any]>({
+    chainId,
+    abi: cakeContract?.abi,
+    address: cakeContract?.address,
+    query: {
+      enabled: Boolean(account && spender),
+    },
+    functionName: 'allowance',
+    args: [account!, spender],
+    watch: true,
+  })
+
+  return useMemo(
+    () => ({
+      isVaultApproved: data && data > 0,
+      allowance: data ? new BigNumber(data?.toString()) : BIG_ZERO,
+      setLastUpdated: refetch,
+    }),
+    [data, refetch],
   )
-
-  const { data, mutate } = useSWRContract(key)
-
-  return { isVaultApproved: data ? data.gt(0) : false, setLastUpdated: mutate }
 }
 
 export default useCakeApprovalStatus

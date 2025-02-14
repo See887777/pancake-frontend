@@ -1,6 +1,6 @@
-import { vars } from "@pancakeswap/ui/css/vars.css";
 import { useIsMounted } from "@pancakeswap/hooks";
 import React from "react";
+import { useMatchBreakpoints } from "../../contexts";
 import { Box, Flex } from "../Box";
 import { Link } from "../Link";
 import {
@@ -13,13 +13,13 @@ import {
   StyledToolsContainer,
 } from "./styles";
 
+import { vars } from "../../css/vars.css";
 import { Button } from "../Button";
 import CakePrice from "../CakePrice/CakePrice";
 import LangSelector from "../LangSelector/LangSelector";
-import { ArrowForwardIcon, LogoWithTextIcon } from "../Svg";
+import { ArrowForwardIcon, LogoIcon, LogoWithTextIcon } from "../Svg";
 import { ThemeSwitcher } from "../ThemeSwitcher";
 import { FooterProps } from "./types";
-import { SkeletonV2 } from "../Skeleton";
 
 const MenuItem: React.FC<React.PropsWithChildren<FooterProps>> = ({
   items,
@@ -30,9 +30,12 @@ const MenuItem: React.FC<React.PropsWithChildren<FooterProps>> = ({
   setLang,
   cakePriceUsd,
   buyCakeLabel,
+  buyCakeLink,
+  chainId,
   ...props
 }) => {
   const isMounted = useIsMounted();
+  const { isXl } = useMatchBreakpoints();
   return (
     <StyledFooter
       data-theme="dark"
@@ -47,7 +50,7 @@ const MenuItem: React.FC<React.PropsWithChildren<FooterProps>> = ({
         </StyledIconMobileContainer>
         <Flex
           order={[2, null, 1]}
-          flexDirection={["column", null, "row"]}
+          flexDirection={["column", "column", "column", "column", "row", "row"]}
           justifyContent="space-between"
           alignItems="flex-start"
           mb={["42px", null, "36px"]}
@@ -61,10 +64,10 @@ const MenuItem: React.FC<React.PropsWithChildren<FooterProps>> = ({
                     <Link
                       data-theme="dark"
                       href={href}
-                      target="_blank"
-                      rel="noreferrer noopener"
+                      external
                       color={isHighlighted ? vars.colors.warning : "text"}
                       bold={false}
+                      style={{ textTransform: "none" }}
                     >
                       {label}
                     </Link>
@@ -75,9 +78,7 @@ const MenuItem: React.FC<React.PropsWithChildren<FooterProps>> = ({
               ))}
             </StyledList>
           ))}
-          <Box display={["none", null, "block"]}>
-            <LogoWithTextIcon width="160px" />
-          </Box>
+          <Box display={["none", null, "block"]}>{isXl ? <LogoIcon /> : <LogoWithTextIcon width="160px" />}</Box>
         </Flex>
         <StyledSocialLinks order={[2]} pb={["42px", null, "32px"]} mb={["0", null, "32px"]} />
         <StyledToolsContainer
@@ -87,9 +88,7 @@ const MenuItem: React.FC<React.PropsWithChildren<FooterProps>> = ({
           justifyContent="space-between"
         >
           <Flex order={[2, null, 1]} alignItems="center">
-            <SkeletonV2 variant="round" width="56px" height="32px" isDataReady={isMounted}>
-              <ThemeSwitcher isDark={isDark} toggleTheme={toggleTheme} />
-            </SkeletonV2>
+            {isMounted && <ThemeSwitcher isDark={isDark} toggleTheme={toggleTheme} />}
             <LangSelector
               currentLang={currentLang}
               langs={langs}
@@ -100,12 +99,12 @@ const MenuItem: React.FC<React.PropsWithChildren<FooterProps>> = ({
           </Flex>
           <Flex order={[1, null, 2]} mb={["24px", null, "0"]} justifyContent="space-between" alignItems="center">
             <Box mr="20px">
-              <CakePrice cakePriceUsd={cakePriceUsd} color="textSubtle" />
+              <CakePrice chainId={chainId} cakePriceUsd={cakePriceUsd} color="textSubtle" />
             </Box>
             <Button
-              data-theme={isDark ? "dark" : "light"}
+              data-theme="dark"
               as="a"
-              href="https://pancakeswap.finance/swap?outputCurrency=0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82&chainId=56"
+              href={buyCakeLink}
               target="_blank"
               scale="sm"
               endIcon={<ArrowForwardIcon color="backgroundAlt" />}

@@ -1,3 +1,4 @@
+import { describe, it } from 'vitest'
 import generateTicketNumbers from 'views/Lottery/components/BuyTicketsModal/generateTicketNumbers'
 
 const withoutExistingNumbers = [
@@ -22,32 +23,32 @@ const withExistingTickets = [
   {
     ...withoutExistingNumbers[0],
     numbersToGenerate: 99,
-    existingTickets: [{ id: '1', number: '1000000' }],
+    existingTickets: [{ id: '1', number: '1000000', status: false }],
   },
   {
     ...withoutExistingNumbers[1],
     numbersToGenerate: 1996,
     existingTickets: [
-      { id: '1', number: '1998000' },
-      { id: '2', number: '1998001' },
-      { id: '3', number: '1998002' },
-      { id: '4', number: '1998003' },
+      { id: '1', number: '1998000', status: false },
+      { id: '2', number: '1998001', status: false },
+      { id: '3', number: '1998002', status: false },
+      { id: '4', number: '1998003', status: false },
     ],
   },
   {
     ...withoutExistingNumbers[2],
     numbersToGenerate: 4995,
     existingTickets: [
-      { id: '1', number: '1156791' },
-      { id: '2', number: '1156991' },
-      { id: '3', number: '1161780' },
-      { id: '4', number: '1161789' },
-      { id: '5', number: '1161790' },
+      { id: '1', number: '1156791', status: false },
+      { id: '2', number: '1156991', status: false },
+      { id: '3', number: '1161780', status: false },
+      { id: '4', number: '1161789', status: false },
+      { id: '5', number: '1161790', status: false },
     ],
   },
 ]
 
-describe('generateTicketNumbers', () => {
+describe.concurrent('generateTicketNumbers', () => {
   it(`generates 10 unique numbers between 0 & 9`, () => {
     const ticketsArray = generateTicketNumbers(10, null, 0, 9)
     const expectedNumbers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -66,7 +67,7 @@ describe('generateTicketNumbers', () => {
     it(`generates ${numbersToGenerate} unique numbers between ${startingNumber} & ${endingNumber} WITHOUT existing numbers`, () => {
       const ticketsArray = generateTicketNumbers(numbersToGenerate, null, startingNumber, endingNumber)
 
-      const expectedNumbers = []
+      const expectedNumbers: number[] = []
       for (let i = startingNumber; i < endingNumber; i++) {
         expectedNumbers.push(i)
       }

@@ -1,9 +1,9 @@
-import { ChainId } from '@pancakeswap/sdk'
-import erc20 from 'config/abi/erc20.json'
-import chunk from 'lodash/chunk'
-import { getMasterChefAddress } from 'utils/addressHelpers'
-import { multicallv2 } from 'utils/multicall'
+import { ChainId } from '@pancakeswap/chains'
 import { SerializedFarm } from '@pancakeswap/farms'
+import chunk from 'lodash/chunk'
+import { getMasterChefV2Address } from 'utils/addressHelpers'
+import { publicClient } from 'utils/wagmi'
+import { erc20Abi } from 'viem'
 import { SerializedFarmConfig } from '../../config/constants/types'
 
 const fetchFarmCalls = (farm: SerializedFarm, chainId: number) => {
@@ -11,43 +11,53 @@ const fetchFarmCalls = (farm: SerializedFarm, chainId: number) => {
   return [
     // Balance of token in the LP contract
     {
+      abi: erc20Abi,
       address: token.address,
-      name: 'balanceOf',
-      params: [lpAddress],
+      functionName: 'balanceOf',
+      args: [lpAddress],
     },
     // Balance of quote token on LP contract
     {
+      abi: erc20Abi,
       address: quoteToken.address,
-      name: 'balanceOf',
-      params: [lpAddress],
+      functionName: 'balanceOf',
+      args: [lpAddress],
     },
     // Balance of LP tokens in the master chef contract
     {
+      abi: erc20Abi,
       address: lpAddress,
-      name: 'balanceOf',
-      params: [getMasterChefAddress(chainId)],
+      functionName: 'balanceOf',
+      args: [getMasterChefV2Address(chainId)],
     },
     // Total supply of LP tokens
     {
+      abi: erc20Abi,
       address: lpAddress,
-      name: 'totalSupply',
+      functionName: 'totalSupply',
     },
     // Token decimals
     {
+      abi: erc20Abi,
       address: token.address,
-      name: 'decimals',
+      functionName: 'decimals',
     },
     // Quote token decimals
     {
+      abi: erc20Abi,
       address: quoteToken.address,
-      name: 'decimals',
+      functionName: 'decimals',
     },
-  ]
+  ] as const
 }
 
-export const fetchPublicFarmsData = async (farms: SerializedFarmConfig[], chainId = ChainId.BSC): Promise<any[]> => {
+export const fetchPublicFarmsData = async (farms: SerializedFarmConfig[], chainId = ChainId.BSC) => {
   const farmCalls = farms.flatMap((farm) => fetchFarmCalls(farm, chainId))
+  const client = publicClient({ chainId })
+  const farmMultiCallResult = await client.multicall({
+    contracts: farmCalls,
+    allowFailure: false,
+  })
   const chunkSize = farmCalls.length / farms.length
-  const farmMultiCallResult = await multicallv2({ abi: erc20, calls: farmCalls, chainId })
   return chunk(farmMultiCallResult, chunkSize)
 }

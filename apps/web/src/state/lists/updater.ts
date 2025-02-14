@@ -1,60 +1,99 @@
 import { getVersionUpgrade, VersionUpgrade } from '@pancakeswap/token-lists'
 import { acceptListUpdate, updateListVersion, useFetchListCallback } from '@pancakeswap/token-lists/react'
-import { EXCHANGE_PAGE_PATHS } from 'config/constants/exchange'
+import { useQuery } from '@tanstack/react-query'
+import { EXCHANGE_PAGE_PATHS, UNIVERSAL_PAGE_PATHS } from 'config/constants/exchange'
 import { UNSUPPORTED_LIST_URLS } from 'config/constants/lists'
-import useWeb3Provider from 'hooks/useActiveWeb3React'
+import { useActiveChainId } from 'hooks/useActiveChainId'
 import { useRouter } from 'next/router'
 import { useEffect, useMemo } from 'react'
-import { useAllLists } from 'state/lists/hooks'
-import useSWRImuutable from 'swr/immutable'
-import { useActiveListUrls } from './hooks'
-import { useListState } from './lists'
+import { useActiveListUrlsByChainId, useAllListsByChainId } from 'state/lists/hooks'
+import { usePublicClient } from 'wagmi'
+import { initialState, useListState, useListStateReady } from './lists'
 
 export default function Updater(): null {
-  const { provider } = useWeb3Provider()
-  const [, dispatch] = useListState()
+  const { chainId } = useActiveChainId()
+  return UpdaterByChainId({ chainId })
+}
+
+export function UpdaterByChainId({ chainId }: { chainId: number }): null {
+  const provider = usePublicClient({ chainId })
+
+  const [listState, dispatch] = useListState()
   const router = useRouter()
   const includeListUpdater = useMemo(() => {
-    return EXCHANGE_PAGE_PATHS.some((item) => {
+    return [...EXCHANGE_PAGE_PATHS, ...UNIVERSAL_PAGE_PATHS].some((item) => {
       return router.pathname.startsWith(item)
     })
   }, [router.pathname])
 
+  const isReady = useListStateReady()
+
   // get all loaded lists, and the active urls
-  const lists = useAllLists()
-  const activeListUrls = useActiveListUrls()
+  const lists = useAllListsByChainId(chainId)
+  const activeListUrls = useActiveListUrlsByChainId(chainId)
 
   useEffect(() => {
-    dispatch(updateListVersion())
-  }, [dispatch])
+    if (isReady) {
+      dispatch(updateListVersion())
+    }
+  }, [dispatch, isReady])
 
   const fetchList = useFetchListCallback(dispatch)
 
-  useSWRImuutable(
-    includeListUpdater ? ['token-list'] : null,
-    () => {
-      Object.keys(lists).forEach((url) =>
-        fetchList(url).catch((error) => console.debug('interval list fetching error', error)),
+  // whenever a list is not loaded and not loading, try again to load it
+  useQuery({
+    queryKey: ['first-fetch-token-list', lists],
+
+    queryFn: () => {
+      Object.keys(lists).forEach((listUrl) => {
+        const list = lists[listUrl]
+        if (!list.current && !list.loadingRequestId && !list.error) {
+          fetchList(listUrl).catch((error) => console.debug('list added fetching error', error))
+        }
+      })
+      return null
+    },
+
+    enabled: Boolean(isReady),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  })
+
+  useQuery({
+    queryKey: ['token-list', chainId],
+
+    queryFn: async () => {
+      return Promise.all(
+        Object.keys(lists).map((url) =>
+          fetchList(url).catch((error) => console.debug('interval list fetching error', error)),
+        ),
       )
     },
-    {
-      dedupingInterval: 1000 * 60 * 10,
-      refreshInterval: 1000 * 60 * 10,
-    },
-  )
+
+    enabled: Boolean(includeListUpdater && isReady && listState !== initialState),
+    refetchInterval: 1000 * 60 * 10,
+    staleTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  })
 
   // if any lists from unsupported lists are loaded, check them too (in case new updates since last visit)
   useEffect(() => {
-    Object.keys(UNSUPPORTED_LIST_URLS).forEach((listUrl) => {
-      const list = lists[listUrl]
-      if (!list || (!list.current && !list.loadingRequestId && !list.error)) {
-        fetchList(listUrl).catch((error) => console.debug('list added fetching error', error))
-      }
-    })
-  }, [fetchList, provider, lists])
+    if (isReady) {
+      Object.keys(UNSUPPORTED_LIST_URLS).forEach((listUrl) => {
+        const list = lists[listUrl]
+        if (!list || (!list.current && !list.loadingRequestId && !list.error)) {
+          fetchList(listUrl).catch((error) => console.debug('list added fetching error', error))
+        }
+      })
+    }
+  }, [fetchList, provider, lists, isReady])
 
   // automatically update lists if versions are minor/patch
   useEffect(() => {
+    if (!isReady) return
     Object.keys(lists).forEach((listUrl) => {
       const list = lists[listUrl]
       if (list.current && list.pendingUpdate) {
@@ -71,7 +110,7 @@ export default function Updater(): null {
         }
       }
     })
-  }, [dispatch, lists, activeListUrls])
+  }, [dispatch, lists, activeListUrls, isReady])
 
   return null
 }

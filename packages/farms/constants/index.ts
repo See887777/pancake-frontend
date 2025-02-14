@@ -1,32 +1,45 @@
-import { ChainId } from '@pancakeswap/sdk'
-import { isStableFarm, SerializedFarmConfig } from '@pancakeswap/farms'
+import { ChainId, getChainName } from '@pancakeswap/chains'
+import { SerializedFarmConfig, SerializedFarmPublicData, isStableFarm, supportedChainIdV2 } from '..'
 
 let logged = false
 
-export const getFarmConfig = async (chainId: ChainId) => {
-  try {
-    return (await import(`/${chainId}.ts`)).default.filter(
-      (f: SerializedFarmConfig) => f.pid !== null,
-    ) as SerializedFarmConfig[]
-  } catch (error) {
-    if (!logged) {
-      console.error('Cannot get farm config', error, chainId)
-      logged = true
+/**
+ * @deprecated
+ */
+export const getFarmConfig = async (chainId?: ChainId) => {
+  if (chainId && supportedChainIdV2.includes(chainId as number)) {
+    const chainName = getChainName(chainId)
+    try {
+      const d = (await import(`./${chainName}.ts`)).default.filter(
+        (f: SerializedFarmPublicData) => f.pid !== null,
+      ) as SerializedFarmPublicData[]
+
+      return d
+    } catch (error) {
+      if (!logged) {
+        console.error('Cannot get farm config', error, chainId, chainName)
+        logged = true
+      }
+      return []
     }
-    return []
   }
+  return undefined
 }
 
 export const getStableConfig = async (chainId: ChainId) => {
-  try {
-    const farms = (await import(`/${chainId}.ts`)).default as SerializedFarmConfig[]
+  if (supportedChainIdV2.includes(chainId as number)) {
+    const chainName = getChainName(chainId)
+    try {
+      const farms = (await import(`/${chainName}.ts`)).default as SerializedFarmConfig[]
 
-    return farms.filter(isStableFarm)
-  } catch (error) {
-    if (!logged) {
-      console.error('Cannot get stable farm config', error, chainId)
-      logged = true
+      return farms.filter(isStableFarm)
+    } catch (error) {
+      if (!logged) {
+        console.error('Cannot get stable farm config', error, chainId, chainName)
+        logged = true
+      }
+      return []
     }
-    return []
   }
+  return undefined
 }

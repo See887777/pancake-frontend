@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@pancakeswap/localization'
 import { useProfile } from 'state/profile/hooks'
-import { Flex, Box, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { Flex, Box, useMatchBreakpoints, PageSection } from '@pancakeswap/uikit'
 import Image from 'next/image'
 import { useTradingCompetitionContractMoD } from 'hooks/useContract'
 import useTheme from 'hooks/useTheme'
-import { PageMeta } from 'components/Layout/Page'
 import { TC_MOD_SUBGRAPH, API_PROFILE } from 'config/constants/endpoints'
-import { multicallv2 } from 'utils/multicall'
-import { ChainId } from '@pancakeswap/sdk'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import tradingCompetitionMoDAbi from 'config/abi/tradingCompetitionMoD.json'
+import { ChainId } from '@pancakeswap/chains'
+import { publicClient } from 'utils/wagmi'
+import { tradingCompetitionMoDABI } from 'config/abi/tradingCompetitionMoD'
 import {
   SmartContractPhases,
   CompetitionPhases,
@@ -20,7 +18,7 @@ import {
   OVER,
   REGISTRATION,
 } from 'config/constants/trading-competition/phases'
-import PageSection from 'components/PageSection'
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
 import { DARKBG, MIDBLUEBG, MIDBLUEBG_DARK, TRADINGCOMPETITIONBANNER } from './pageSectionStyles'
 import {
   //  RanksIcon,
@@ -45,12 +43,12 @@ import MoDCakerBunny from './pngs/MoD-caker.png'
 import PrizesInfoSection from './components/PrizesInfoSection'
 
 const MoDCompetition = () => {
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const { t } = useTranslation()
   const { profile, isLoading: isProfileLoading } = useProfile()
   const { isMobile } = useMatchBreakpoints()
   const { isDark, theme } = useTheme()
-  const tradingCompetitionContract = useTradingCompetitionContractMoD(false)
+  const tradingCompetitionContract = useTradingCompetitionContractMoD()
   const [currentPhase, setCurrentPhase] = useState(CompetitionPhases.CLAIM)
   const { registrationSuccessful, claimSuccessful, onRegisterSuccess, onClaimSuccess } = useRegistrationClaimStatus()
   const [userTradingInformation, setUserTradingInformation] =
@@ -81,27 +79,29 @@ const MoDCompetition = () => {
 
   useEffect(() => {
     const fetchCompetitionInfoContract = async () => {
-      const competitionStatus = await tradingCompetitionContract.currentStatus()
-      setCurrentPhase(SmartContractPhases[competitionStatus])
+      const competitionStatus = await tradingCompetitionContract.read.currentStatus()
+      setCurrentPhase(SmartContractPhases[competitionStatus as number])
     }
 
     const fetchUserContract = async () => {
       try {
-        const [user, [userClaimed]] = await multicallv2({
-          abi: tradingCompetitionMoDAbi,
-          calls: [
+        const bscClient = publicClient({ chainId: ChainId.BSC })
+        const [user, userClaimed] = await bscClient.multicall({
+          contracts: [
             {
               address: tradingCompetitionContract.address,
-              name: 'claimInformation',
-              params: [account],
+              abi: tradingCompetitionMoDABI,
+              functionName: 'claimInformation',
+              args: [account || '0x'],
             },
             {
               address: tradingCompetitionContract.address,
-              name: 'userTradingStats',
-              params: [account],
+              abi: tradingCompetitionMoDABI,
+              functionName: 'userTradingStats',
+              args: [account || '0x'],
             },
           ],
-          options: { requireSuccess: false },
+          allowFailure: false,
         })
         const userObject: UserTradingInformation = {
           isLoading: false,
@@ -156,7 +156,6 @@ const MoDCompetition = () => {
 
   return (
     <>
-      <PageMeta />
       <CompetitionPage id="pcs-competition-page">
         <PageSection
           style={{ paddingTop: '0px' }}
@@ -235,12 +234,12 @@ const MoDCompetition = () => {
             <Box my="64px">
               <TeamRanksWithParticipants
                 image={MoDCakerBunny}
-                team1LeaderboardInformation={team1LeaderboardInformation}
-                team2LeaderboardInformation={team2LeaderboardInformation}
-                team3LeaderboardInformation={team3LeaderboardInformation}
-                globalLeaderboardInformation={globalLeaderboardInformation}
+                team1LeaderboardInformation={team1LeaderboardInformation as any}
+                team2LeaderboardInformation={team2LeaderboardInformation as any}
+                team3LeaderboardInformation={team3LeaderboardInformation as any}
+                globalLeaderboardInformation={globalLeaderboardInformation as any}
                 participantSubgraphAddress={TC_MOD_SUBGRAPH}
-                subgraphName="pancakeswap/trading-competition-v4"
+                subgraph={TC_MOD_SUBGRAPH}
               />
             </Box>
           </PageSection>
@@ -273,7 +272,7 @@ const MoDCompetition = () => {
         >
           <Flex alignItems="center" position="relative">
             <BottomBunnyWrapper>
-              <Image src={StormBunny} width={182} height={213} />
+              <Image src={StormBunny} alt="storm-bunny" width={182} height={213} />
             </BottomBunnyWrapper>
             {shouldHideCta ? null : (
               <Flex height="fit-content" position="relative" zIndex="2">

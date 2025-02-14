@@ -1,7 +1,8 @@
-import { CurrencyAmount, Token } from '@pancakeswap/aptos-swap-sdk'
+import { CurrencyAmount, Token, Percent } from '@pancakeswap/aptos-swap-sdk'
 import { useTranslation } from '@pancakeswap/localization'
 
-import { Liquidity as LiquidityUI, Column, AddIcon, CardBody, AutoColumn, Button } from '@pancakeswap/uikit'
+import { Column, AddIcon, CardBody, AutoColumn, Button } from '@pancakeswap/uikit'
+import { Liquidity } from '@pancakeswap/widgets-internal'
 import { CurrencyInputPanel } from 'components/CurrencyInputPanel'
 import AddLiquidityButton from 'components/Liquidity/components/AddLiquidityButton'
 import { PairState } from 'hooks/usePairs'
@@ -18,7 +19,7 @@ import PoolPriceBar from './PoolPriceBar'
 import PricePoolShareSection from './PricePoolShareSection'
 import SlippageSection from './SlippageSection'
 
-const { FirstLP } = LiquidityUI
+const { FirstLP } = Liquidity
 
 export default function AddLiquidityForm({ notSupportPair }: { notSupportPair: boolean }) {
   const { t } = useTranslation()
@@ -71,9 +72,17 @@ export default function AddLiquidityForm({ notSupportPair }: { notSupportPair: b
           value={formattedAmounts[Field.CURRENCY_A]}
           onUserInput={onFieldAInput}
           showMaxButton
+          showUSDPrice
           onMax={() => {
             onFieldAInput(maxAmounts[Field.CURRENCY_A]?.toExact() ?? '')
           }}
+          showQuickInputButton
+          onPercentInput={(percent) => {
+            if (maxAmounts[Field.CURRENCY_A]) {
+              onFieldAInput(maxAmounts[Field.CURRENCY_A]?.multiply(new Percent(percent, 100)).toExact() ?? '')
+            }
+          }}
+          maxAmount={maxAmounts[Field.CURRENCY_A]}
         />
         <Column width="100%" alignItems="center">
           <AddIcon width="16px" />
@@ -86,9 +95,17 @@ export default function AddLiquidityForm({ notSupportPair }: { notSupportPair: b
           value={formattedAmounts[Field.CURRENCY_B]}
           onUserInput={onFieldBInput}
           showMaxButton
+          showUSDPrice
           onMax={() => {
             onFieldBInput(maxAmounts[Field.CURRENCY_B]?.toExact() ?? '')
           }}
+          showQuickInputButton
+          onPercentInput={(percent) => {
+            if (maxAmounts[Field.CURRENCY_B]) {
+              onFieldBInput(maxAmounts[Field.CURRENCY_B]?.multiply(new Percent(percent, 100)).toExact() ?? '')
+            }
+          }}
+          maxAmount={maxAmounts[Field.CURRENCY_B]}
         />
 
         {currencyA && currencyB && pairState !== PairState.INVALID ? (

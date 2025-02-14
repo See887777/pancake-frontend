@@ -1,19 +1,11 @@
-import { Trade, Currency, CurrencyAmount, TradeType } from '@pancakeswap/aptos-swap-sdk'
+import { Currency, CurrencyAmount, Trade, TradeType } from '@pancakeswap/aptos-swap-sdk'
 import { useTranslation } from '@pancakeswap/localization'
-import {
-  AutoColumn,
-  AutoRow,
-  Button,
-  QuestionHelper,
-  RowBetween,
-  RowFixed,
-  Swap as SwapUI,
-  Text,
-  SwapCallbackError,
-} from '@pancakeswap/uikit'
+import { AutoColumn, AutoRow, Button, QuestionHelper, RowBetween, RowFixed, Text } from '@pancakeswap/uikit'
+import { SwapCallbackError, Swap as SwapUI } from '@pancakeswap/widgets-internal'
+
 import { useMemo } from 'react'
 import { Field } from 'state/swap'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { computeTradePriceBreakdown, warningSeverity } from 'utils/exchange'
 import FormattedPriceImpact from './FormattedPriceImpact'
 
@@ -71,6 +63,7 @@ export default function SwapModalFooter({
                 'Your transaction will revert if there is a large, unfavorable price movement before it is confirmed.',
               )}
               ml="4px"
+              placement="top"
             />
           </RowFixed>
           <RowFixed>
@@ -92,6 +85,7 @@ export default function SwapModalFooter({
             <QuestionHelper
               text={t('The difference between the market price and your price due to trade size.')}
               ml="4px"
+              placement="top"
             />
           </RowFixed>
           <FormattedPriceImpact priceImpact={priceImpactWithoutFee} />

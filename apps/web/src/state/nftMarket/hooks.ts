@@ -1,89 +1,107 @@
-import { useMemo } from 'react'
-import { isAddress } from 'utils'
+import { useQuery } from '@tanstack/react-query'
+import { TFetchStatus } from 'config/constants/types'
 import { useAtom } from 'jotai'
-import { FetchStatus } from 'config/constants/types'
-import erc721Abi from 'config/abi/erc721.json'
-import { useSWRMulticall } from 'hooks/useSWRContract'
-import { getPancakeProfileAddress } from 'utils/addressHelpers'
-import useSWR from 'swr'
-import useSWRImmutable from 'swr/immutable'
 import isEmpty from 'lodash/isEmpty'
 import shuffle from 'lodash/shuffle'
+import { safeGetAddress } from 'utils'
+import { getPancakeProfileAddress } from 'utils/addressHelpers'
 
 import fromPairs from 'lodash/fromPairs'
-import { ApiCollections, NftToken, Collection, NftAttribute, MarketEvent } from './types'
+import { erc721Abi } from 'viem'
+import { useReadContracts } from '@pancakeswap/wagmi'
+import { nftMarketActivityFiltersAtom, nftMarketFiltersAtom, tryVideoNftMediaAtom } from './atoms'
 import { getCollection, getCollections } from './helpers'
-import { nftMarketActivityFiltersAtom, tryVideoNftMediaAtom, nftMarketFiltersAtom } from './atoms'
+import { ApiCollections, Collection, MarketEvent, NftAttribute, NftToken } from './types'
 
 const DEFAULT_NFT_ORDERING = { field: 'currentAskPrice', direction: 'asc' as 'asc' | 'desc' }
 const DEFAULT_NFT_ACTIVITY_FILTER = { typeFilters: [], collectionFilters: [] }
 const EMPTY_OBJECT = {}
 
-export const useGetCollections = (): { data: ApiCollections; status: FetchStatus } => {
-  const { data, status } = useSWR(['nftMarket', 'collections'], async () => getCollections())
+export const useGetCollections = (): { data: ApiCollections; status: TFetchStatus } => {
+  const { data, status } = useQuery({
+    queryKey: ['nftMarket', 'collections'],
+    queryFn: async () => getCollections(),
+  })
   const collections = data ?? ({} as ApiCollections)
   return { data: collections, status }
 }
 
-export const useGetCollection = (collectionAddress: string): Collection | undefined => {
-  const checksummedCollectionAddress = isAddress(collectionAddress) || ''
-  const { data } = useSWR(
-    checksummedCollectionAddress ? ['nftMarket', 'collections', checksummedCollectionAddress.toLowerCase()] : null,
-    async () => getCollection(checksummedCollectionAddress),
-  )
+export const useGetCollection = (collectionAddress: string | undefined): Collection | undefined => {
+  const checksummedCollectionAddress = safeGetAddress(collectionAddress) || ''
+  const { data } = useQuery({
+    queryKey: ['nftMarket', 'collections', checksummedCollectionAddress?.toLowerCase()],
+    queryFn: async () => getCollection(checksummedCollectionAddress),
+    enabled: Boolean(checksummedCollectionAddress),
+  })
   const collectionObject = data ?? {}
   return collectionObject[checksummedCollectionAddress]
 }
 
-export const useGetShuffledCollections = (): { data: Collection[]; status: FetchStatus } => {
-  const { data } = useSWRImmutable(['nftMarket', 'collections'], async () => getCollections())
+export const useGetShuffledCollections = (): { data: Collection[]; status: 'pending' | 'success' | 'error' } => {
+  const { data } = useQuery({
+    queryKey: ['nftMarket', 'collections'],
+    queryFn: async () => getCollections(),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  })
   const collections = data ?? ({} as ApiCollections)
-  const { data: shuffledCollections, status } = useSWRImmutable(
-    !isEmpty(collections) ? ['nftMarket', 'shuffledCollections'] : null,
-    () => {
-      return shuffle(collections)
-    },
-  )
+  const { data: shuffledCollections = [], status } = useQuery({
+    queryKey: ['nftMarket', 'shuffledCollections'],
+    queryFn: () => shuffle(collections),
+    enabled: Boolean(collections && !isEmpty(collections)),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  })
   return { data: shuffledCollections, status }
 }
 
 export const useApprovalNfts = (nftsInWallet: NftToken[]) => {
-  const nftApprovalCalls = useMemo(
-    () =>
-      nftsInWallet.map((nft: NftToken) => {
-        const { tokenId, collectionAddress } = nft
+  const { data } = useReadContracts({
+    contracts: nftsInWallet.map(
+      (f) =>
+        ({
+          abi: erc721Abi,
+          address: f.collectionAddress,
+          functionName: 'getApproved',
+          args: [BigInt(f.tokenId)],
+        } as const),
+    ),
+    watch: true,
+  })
 
-        return {
-          address: collectionAddress,
-          name: 'getApproved',
-          params: [tokenId],
-        }
-      }),
-    [nftsInWallet],
-  )
-
-  const { data } = useSWRMulticall(erc721Abi, nftApprovalCalls)
   const profileAddress = getPancakeProfileAddress()
 
   const approvedTokenIds = Array.isArray(data)
-    ? fromPairs(data.flat().map((address, index) => [nftsInWallet[index].tokenId, profileAddress === address]))
+    ? fromPairs(
+        data
+          .flat()
+          .map((result, index) => [
+            nftsInWallet[index].tokenId,
+            profileAddress.toLowerCase() === result?.result?.toLowerCase(),
+          ]),
+      )
     : null
 
   return { data: approvedTokenIds }
 }
 
-export const useGetNftFilters = (collectionAddress: string): Readonly<Record<string, NftAttribute>> => {
+export const useGetNftFilters = (collectionAddress?: string): Readonly<Record<string, NftAttribute>> => {
   const [nftMarketFilters] = useAtom(nftMarketFiltersAtom)
+  if (!collectionAddress) return EMPTY_OBJECT
   return nftMarketFilters[collectionAddress]?.activeFilters ?? EMPTY_OBJECT
 }
 
-export const useGetNftOrdering = (collectionAddress: string) => {
+export const useGetNftOrdering = (collectionAddress?: string) => {
   const [nftMarketFilters] = useAtom(nftMarketFiltersAtom)
+  if (!collectionAddress) return DEFAULT_NFT_ORDERING
   return nftMarketFilters[collectionAddress]?.ordering ?? DEFAULT_NFT_ORDERING
 }
 
-export const useGetNftShowOnlyOnSale = (collectionAddress: string) => {
+export const useGetNftShowOnlyOnSale = (collectionAddress?: string) => {
   const [nftMarketFilters] = useAtom(nftMarketFiltersAtom)
+  if (!collectionAddress) return true
   return nftMarketFilters[collectionAddress]?.showOnlyOnSale ?? true
 }
 

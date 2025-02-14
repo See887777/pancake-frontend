@@ -5,7 +5,8 @@ import { useCallWithGasPrice } from 'hooks/useCallWithGasPrice'
 import useCatchTxError from 'hooks/useCatchTxError'
 import { usePointCenterIfoContract } from 'hooks/useContract'
 import { Achievement } from 'state/types'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
+import { Address } from 'viem'
 import AchievementAvatar from 'views/Profile/components/Achievements/AchievementAvatar'
 import AchievementDescription from 'views/Profile/components/Achievements/AchievementDescription'
 import AchievementTitle from 'views/Profile/components/Achievements/AchievementTitle'
@@ -59,10 +60,10 @@ const AchievementRow: React.FC<React.PropsWithChildren<AchievementRowProps>> = (
 
   const handleCollectPoints = async () => {
     const receipt = await fetchWithCatchTxError(() => {
-      return callWithGasPrice(pointCenterContract, 'getPoints', [achievement.address])
+      return callWithGasPrice(pointCenterContract, 'getPoints', [achievement.address as Address])
     })
     if (receipt?.status) {
-      onCollectSuccess(achievement)
+      onCollectSuccess?.(achievement)
       toastSuccess(t('Points Collected!'), <ToastDescriptionWithTx txHash={receipt.transactionHash} />)
     }
   }

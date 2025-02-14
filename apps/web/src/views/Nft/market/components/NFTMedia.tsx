@@ -1,11 +1,11 @@
+import { useIntersectionObserver } from '@pancakeswap/hooks'
 import { Box, BoxProps } from '@pancakeswap/uikit'
-import { FC, useEffect, useRef } from 'react'
-import useIntersectionObserver from 'hooks/useIntersectionObserver'
-import { NftToken } from 'state/nftMarket/types'
-import styled from 'styled-components'
-import { useTryVideoNftMedia } from 'state/nftMarket/hooks'
+import { useEffect, useRef } from 'react'
 import { useAppDispatch } from 'state'
+import { useTryVideoNftMedia } from 'state/nftMarket/hooks'
 import { useNftStorage } from 'state/nftMarket/storage'
+import { NftToken } from 'state/nftMarket/types'
+import { styled } from 'styled-components'
 import { RoundedImage } from '../Collection/IndividualNFTPage/shared/styles'
 
 const StyledAspectRatio = styled(Box)`
@@ -19,7 +19,7 @@ export const AspectRatio = ({ ratio, children, ...props }) => (
   </Box>
 )
 
-const NFTMedia: FC<
+const NFTMedia: React.FC<
   React.PropsWithChildren<
     {
       nft?: NftToken
@@ -32,7 +32,7 @@ const NFTMedia: FC<
   const dispatch = useAppDispatch()
   const { setTryVideoNftMedia } = useNftStorage()
   const tryVideoNftMedia = useTryVideoNftMedia()
-  const vidRef = useRef(null)
+  const vidRef = useRef<HTMLVideoElement>(null)
   const { observerRef, isIntersecting } = useIntersectionObserver()
 
   useEffect(() => {

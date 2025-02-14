@@ -1,7 +1,6 @@
 {
   "name": "@pancakeswap/token-lists",
-  "version": "0.0.2",
-  "sideEffects": false,
+  "version": "0.0.14",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -9,22 +8,27 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest --run",
-    "prepublishOnly": "yarn run build",
     "clean": "rm -rf .turbo && rm -rf node_modules && rm -rf dist"
   },
   "dependencies": {
+    "@pancakeswap/swap-sdk-core": "workspace:*",
     "ajv": "^6.12.3",
-    "@pancakeswap/swap-sdk-core": "*"
+    "lodash": "^4.17.21"
   },
   "peerDependencies": {
-    "@reduxjs/toolkit": "^1.8.6",
+    "@reduxjs/toolkit": "^1.9.1",
+    "jotai": "^2.4.3",
     "localforage": "^1.10.0",
-    "jotai": "^1.8.6",
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@reduxjs/toolkit": "^1.8.6",
-    "react": "^18.2.0"
+    "@pancakeswap/utils": "workspace:*",
+    "@reduxjs/toolkit": "^1.9.1",
+    "@types/react": "^18.2.21",
+    "jotai": "^2.4.3",
+    "localforage": "^1.10.0",
+    "react": "^18.2.0",
+    "tsup": "^6.7.0"
   },
   "exports": {
     ".": {

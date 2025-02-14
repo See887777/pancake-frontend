@@ -1,32 +1,22 @@
-import { useEffect, useState } from 'react'
-import { isAddress } from 'utils'
-import { useAppDispatch } from 'state'
-import {
-  ArrowBackIcon,
-  ArrowForwardIcon,
-  Box,
-  Button,
-  Flex,
-  Table,
-  Text,
-  Th,
-  useMatchBreakpoints,
-} from '@pancakeswap/uikit'
-import { getCollectionActivity } from 'state/nftMarket/helpers'
+import { useLastUpdated } from '@pancakeswap/hooks'
+import { useTranslation } from '@pancakeswap/localization'
+import { Box, Button, Flex, PaginationButton, Table, Text, Th, useMatchBreakpoints } from '@pancakeswap/uikit'
 import Container from 'components/Layout/Container'
 import TableLoader from 'components/TableLoader'
-import { Activity, Collection, NftToken } from 'state/nftMarket/types'
-import { useTranslation } from '@pancakeswap/localization'
-import { useBNBBusdPrice } from 'hooks/useBUSDPrice'
+import { useBNBPrice } from 'hooks/useBNBPrice'
 import useTheme from 'hooks/useTheme'
-import { useLastUpdated } from '@pancakeswap/hooks'
+import { useEffect, useState } from 'react'
+import { useAppDispatch } from 'state'
+import { getCollectionActivity } from 'state/nftMarket/helpers'
 import { useGetNftActivityFilters } from 'state/nftMarket/hooks'
-import { Arrow, PageButtons } from '../components/PaginationButtons'
+import { Activity, Collection, NftToken } from 'state/nftMarket/types'
+import { safeGetAddress } from 'utils'
+import { isAddress } from 'viem'
+import ActivityRow from '../components/Activity/ActivityRow'
 import NoNftsImage from '../components/Activity/NoNftsImage'
 import ActivityFilters from './ActivityFilters'
-import ActivityRow from '../components/Activity/ActivityRow'
-import { sortActivity } from './utils/sortActivity'
 import { fetchActivityNftMetadata } from './utils/fetchActivityNftMetadata'
+import { sortActivity } from './utils/sortActivity'
 
 const MAX_PER_PAGE = 8
 
@@ -42,22 +32,16 @@ const ActivityHistory: React.FC<React.PropsWithChildren<ActivityHistoryProps>> =
   const nftActivityFilters = useGetNftActivityFilters(collectionAddress)
   const { theme } = useTheme()
   const { t } = useTranslation()
-  const [paginationData, setPaginationData] = useState<{
-    activity: Activity[]
-    currentPage: number
-    maxPage: number
-  }>({
-    activity: [],
-    currentPage: 1,
-    maxPage: 1,
-  })
+  const [currentPage, setCurrentPage] = useState(1)
+  const [maxPage, setMaxPages] = useState(1)
+  const [activityData, setActivityData] = useState<Activity[]>([])
   const [activitiesSlice, setActivitiesSlice] = useState<Activity[]>([])
   const [nftMetadata, setNftMetadata] = useState<NftToken[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isInitialized, setIsInitialized] = useState(false)
   const [queryPage, setQueryPage] = useState(1)
   const { lastUpdated, setLastUpdated: refresh } = useLastUpdated()
-  const bnbBusdPrice = useBNBBusdPrice()
+  const bnbBusdPrice = useBNBPrice()
   const { isXs, isSm, isMd } = useMatchBreakpoints()
 
   const nftActivityFiltersString = JSON.stringify(nftActivityFilters)
@@ -73,11 +57,9 @@ const ActivityHistory: React.FC<React.PropsWithChildren<ActivityHistoryProps>> =
           MAX_PER_QUERY,
         )
         const activity = sortActivity(collectionActivity)
-        setPaginationData({
-          activity,
-          currentPage: 1,
-          maxPage: Math.ceil(activity.length / MAX_PER_PAGE) || 1,
-        })
+        setCurrentPage(1)
+        setActivityData(activity)
+        setMaxPages(Math.ceil(activity.length / MAX_PER_PAGE) || 1)
         setIsLoading(false)
         setIsInitialized(true)
       } catch (error) {
@@ -102,15 +84,38 @@ const ActivityHistory: React.FC<React.PropsWithChildren<ActivityHistoryProps>> =
   }, [activitiesSlice])
 
   useEffect(() => {
-    const slice = paginationData.activity.slice(
-      MAX_PER_PAGE * (paginationData.currentPage - 1),
-      MAX_PER_PAGE * paginationData.currentPage,
-    )
+    const slice = activityData.slice(MAX_PER_PAGE * (currentPage - 1), MAX_PER_PAGE * currentPage)
     setActivitiesSlice(slice)
-  }, [paginationData])
+  }, [activityData, currentPage])
+
+  useEffect(() => {
+    const fetchCollectionActivity = async () => {
+      try {
+        setIsLoading(true)
+        const nftActivityFiltersParsed = JSON.parse(nftActivityFiltersString)
+        const collectionActivity = await getCollectionActivity(
+          collectionAddress.toLowerCase(),
+          nftActivityFiltersParsed,
+          MAX_PER_QUERY * (queryPage + 1),
+        )
+        const activity = sortActivity(collectionActivity)
+
+        setIsLoading(false)
+        setActivityData(activity)
+        setMaxPages(Math.ceil(activity.length / MAX_PER_PAGE) || 1)
+        setQueryPage((prevState) => prevState + 1)
+      } catch (error) {
+        console.error('Failed to fetch collection activity', error)
+      }
+    }
+
+    if (maxPage - currentPage === 1 && activityData.length === MAX_PER_QUERY * queryPage) {
+      fetchCollectionActivity()
+    }
+  }, [activityData, collectionAddress, currentPage, maxPage, nftActivityFiltersString, queryPage])
 
   const marketHistoryNotFound =
-    paginationData.activity.length === 0 && nftMetadata.length === 0 && activitiesSlice.length === 0 && !isLoading
+    activityData.length === 0 && nftMetadata.length === 0 && activitiesSlice.length === 0 && !isLoading
 
   const pagination = marketHistoryNotFound ? null : (
     <Container>
@@ -121,67 +126,7 @@ const ActivityHistory: React.FC<React.PropsWithChildren<ActivityHistoryProps>> =
         justifyContent="space-between"
         height="100%"
       >
-        <PageButtons>
-          <Arrow
-            onClick={() => {
-              if (paginationData.currentPage !== 1) {
-                setPaginationData((prevState) => ({
-                  ...prevState,
-                  currentPage: prevState.currentPage - 1,
-                }))
-              }
-            }}
-          >
-            <ArrowBackIcon color={paginationData.currentPage === 1 ? 'textDisabled' : 'primary'} />
-          </Arrow>
-          <Text>
-            {t('Page %page% of %maxPage%', {
-              page: paginationData.currentPage,
-              maxPage: paginationData.maxPage,
-            })}
-          </Text>
-          <Arrow
-            onClick={async () => {
-              if (paginationData.currentPage !== paginationData.maxPage) {
-                setPaginationData((prevState) => ({
-                  ...prevState,
-                  currentPage: prevState.currentPage + 1,
-                }))
-
-                if (
-                  paginationData.maxPage - paginationData.currentPage === 1 &&
-                  paginationData.activity.length === MAX_PER_QUERY * queryPage
-                ) {
-                  try {
-                    setIsLoading(true)
-                    const nftActivityFiltersParsed = JSON.parse(nftActivityFiltersString)
-                    const collectionActivity = await getCollectionActivity(
-                      collectionAddress.toLowerCase(),
-                      nftActivityFiltersParsed,
-                      MAX_PER_QUERY * (queryPage + 1),
-                    )
-                    const activity = sortActivity(collectionActivity)
-                    setPaginationData((prevState) => {
-                      return {
-                        ...prevState,
-                        activity,
-                        maxPage: Math.ceil(activity.length / MAX_PER_PAGE) || 1,
-                      }
-                    })
-                    setIsLoading(false)
-                    setQueryPage((prevState) => prevState + 1)
-                  } catch (error) {
-                    console.error('Failed to fetch collection activity', error)
-                  }
-                }
-              }
-            }}
-          >
-            <ArrowForwardIcon
-              color={paginationData.currentPage === paginationData.maxPage ? 'textDisabled' : 'primary'}
-            />
-          </Arrow>
-        </PageButtons>
+        <PaginationButton showMaxPageText currentPage={currentPage} maxPage={maxPage} setCurrentPage={setCurrentPage} />
       </Flex>
     </Container>
   )
@@ -242,12 +187,12 @@ const ActivityHistory: React.FC<React.PropsWithChildren<ActivityHistoryProps>> =
                   activitiesSlice.map((activity) => {
                     const nftMeta = nftMetadata.find(
                       (metaNft) =>
-                        metaNft.tokenId === activity.nft.tokenId &&
-                        isAddress(metaNft.collectionAddress) === isAddress(activity.nft?.collection.id),
+                        metaNft.tokenId === activity.nft?.tokenId &&
+                        safeGetAddress(metaNft.collectionAddress) === safeGetAddress(activity.nft?.collection.id),
                     )
                     return (
                       <ActivityRow
-                        key={`${activity.marketEvent}#${activity.nft.tokenId}#${activity.timestamp}#${activity.tx}`}
+                        key={`${activity.marketEvent}#${activity.nft?.tokenId}#${activity.timestamp}#${activity.tx}`}
                         activity={activity}
                         nft={nftMeta}
                         bnbBusdPrice={bnbBusdPrice}

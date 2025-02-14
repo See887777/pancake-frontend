@@ -1,4 +1,4 @@
-import { useEffect, memo } from 'react'
+import { useEffect, memo, useCallback } from 'react'
 import { useModal } from '@pancakeswap/uikit'
 import DisclaimerModal from 'components/DisclaimerModal'
 import { useUserLimitOrderAcceptedWarning } from 'state/user/hooks'
@@ -9,11 +9,19 @@ function ClaimWarning() {
   const { t } = useTranslation()
   const [hasAcceptedRisk, setHasAcceptedRisk] = useUserLimitOrderAcceptedWarning()
 
+  const handleSuccess = useCallback(() => {
+    setHasAcceptedRisk(true)
+  }, [setHasAcceptedRisk])
+
   const [onPresentRiskDisclaimer, onDismiss] = useModal(
     <DisclaimerModal
       id="disclaimer-limit-order"
       header={t('I acknowledge that:')}
       checks={[
+        {
+          key: 'deprecated-checkbox',
+          content: <b>{t('I understand that this feature is deprecated and no longer in maintenance.')}</b>,
+        },
         {
           key: 'price-checkbox',
           content: t('I understand that small orders are executed at higher execution price due to gas fees.'),
@@ -25,9 +33,8 @@ function ClaimWarning() {
           ),
         },
       ]}
-      onSuccess={() => setHasAcceptedRisk(true)}
+      onSuccess={handleSuccess}
     />,
-    false,
     false,
   )
 
@@ -36,11 +43,8 @@ function ClaimWarning() {
       onPresentRiskDisclaimer()
     }
 
-    return () => {
-      onDismiss()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasAcceptedRisk])
+    return onDismiss
+  }, [hasAcceptedRisk, onDismiss, onPresentRiskDisclaimer])
 
   return null
 }

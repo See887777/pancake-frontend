@@ -1,27 +1,39 @@
 import { useTranslation } from '@pancakeswap/localization'
-import { Button, CheckmarkIcon, CogIcon, Input, LinkExternal, Text, Toggle, useTooltip } from '@pancakeswap/uikit'
 import { TokenList, Version } from '@pancakeswap/token-lists'
-import Card from 'components/Card'
-import { UNSUPPORTED_LIST_URLS } from 'config/constants/lists'
-import { useAtomValue } from 'jotai'
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { useListState } from 'state/lists/lists'
-import styled from 'styled-components'
 import {
-  useFetchListCallback,
   acceptListUpdate,
   disableList,
   enableList,
   removeList,
+  useFetchListCallback,
 } from '@pancakeswap/token-lists/react'
+import {
+  AutoColumn,
+  Button,
+  CheckmarkIcon,
+  CogIcon,
+  Column,
+  Input,
+  LinkExternal,
+  Text,
+  Toggle,
+  useConfirm,
+  useTooltip,
+} from '@pancakeswap/uikit'
+import { ListLogo } from '@pancakeswap/widgets-internal'
+
 import uriToHttp from '@pancakeswap/utils/uriToHttp'
+import Card from 'components/Card'
+import { MULTI_CHAIN_LIST_URLS, UNSUPPORTED_LIST_URLS } from 'config/constants/lists'
+import { useAtomValue } from 'jotai'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { useListState } from 'state/lists/lists'
+import { styled } from 'styled-components'
 
 import { useActiveChainId } from 'hooks/useActiveChainId'
 import { selectorByUrlsAtom, useActiveListUrls, useAllLists, useIsListActive } from '../../state/lists/hooks'
 
-import Column, { AutoColumn } from '../Layout/Column'
 import Row, { RowBetween, RowFixed } from '../Layout/Row'
-import { ListLogo } from '../Logo'
 import { CurrencyModalView } from './types'
 
 function listVersionLabel(version: Version): string {
@@ -69,12 +81,14 @@ const ListRow = memo(function ListRow({ listUrl }: { listUrl: string }) {
     dispatch(acceptListUpdate(listUrl))
   }, [dispatch, listUrl, pending])
 
+  const confirm = useConfirm()
+
   const handleRemoveList = useCallback(() => {
-    // eslint-disable-next-line no-alert
-    if (window.confirm('Please confirm you would like to remove this list')) {
-      dispatch(removeList(listUrl))
-    }
-  }, [dispatch, listUrl])
+    confirm({
+      message: 'Please confirm you would like to remove this list',
+      onConfirm: (confirmed) => confirmed && dispatch(removeList(listUrl)),
+    })
+  }, [confirm, dispatch, listUrl])
 
   const handleEnableList = useCallback(() => {
     dispatch(enableList(listUrl))
@@ -99,7 +113,7 @@ const ListRow = memo(function ListRow({ listUrl }: { listUrl: string }) {
         </Button>
       )}
     </div>,
-    { placement: 'right-end', trigger: 'click' },
+    { placement: 'right-end', trigger: 'click', isInPortal: false },
   )
 
   if (!list) return null
@@ -161,6 +175,8 @@ function ManageLists({
 }) {
   const [listUrlInput, setListUrlInput] = useState<string>('')
 
+  const { chainId } = useActiveChainId()
+
   const { t } = useTranslation()
   const [, dispatch] = useListState()
 
@@ -190,7 +206,13 @@ function ManageLists({
     return listUrls
       .filter((listUrl) => {
         // only show loaded lists, hide unsupported lists
-        return Boolean(lists[listUrl].current) && !UNSUPPORTED_LIST_URLS.includes(listUrl)
+        const isValid = Boolean(lists[listUrl].current) && !UNSUPPORTED_LIST_URLS.includes(listUrl)
+
+        if (isValid && chainId) {
+          return MULTI_CHAIN_LIST_URLS[chainId]?.includes(listUrl)
+        }
+
+        return false
       })
       .sort((u1, u2) => {
         const { current: l1 } = lists[u1]
@@ -207,8 +229,8 @@ function ManageLists({
         if (l1 && l2) {
           // Always make PancakeSwap list in top.
           const keyword = 'pancakeswap'
-          if (l1.name.toLowerCase().includes(keyword) || l2.name.toLowerCase().includes(keyword)) {
-            return -1
+          if (!l1.name.toLowerCase().includes(keyword) && l2.name.toLowerCase().includes(keyword)) {
+            return 1
           }
 
           return l1.name.toLowerCase() < l2.name.toLowerCase()
@@ -221,21 +243,18 @@ function ManageLists({
         if (l2) return 1
         return 0
       })
-  }, [lists, activeCopy])
+  }, [lists, chainId, activeCopy])
 
   // temporary fetched list for import flow
   const [tempList, setTempList] = useState<TokenList>()
   const [addError, setAddError] = useState<string | undefined>()
 
   useEffect(() => {
-    async function fetchTempList() {
+    // if valid url, fetch details for card
+    if (validUrl) {
       fetchList(listUrlInput, false)
         .then((list) => setTempList(list))
         .catch(() => setAddError('Error importing list'))
-    }
-    // if valid url, fetch details for card
-    if (validUrl) {
-      fetchTempList()
     } else {
       setTempList(undefined)
       if (listUrlInput !== '') {
@@ -279,7 +298,7 @@ function ManageLists({
         ) : null}
       </AutoColumn>
       {tempList && (
-        <AutoColumn style={{ paddingTop: 0 }}>
+        <AutoColumn style={{ marginTop: 8 }}>
           <Card padding="12px 20px">
             <RowBetween>
               <RowFixed>

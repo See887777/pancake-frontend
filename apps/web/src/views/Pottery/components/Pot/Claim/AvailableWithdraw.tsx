@@ -1,14 +1,14 @@
 import { useMemo } from 'react'
 import { useTranslation } from '@pancakeswap/localization'
 import { Flex, Box, Text, Balance } from '@pancakeswap/uikit'
-import { usePriceCakeBusd } from 'state/farms/hooks'
+import { useCakePrice } from 'hooks/useCakePrice'
 import BigNumber from 'bignumber.js'
 import { getBalanceNumber } from '@pancakeswap/utils/formatBalance'
 import { PotteryWithdrawAbleData } from 'state/types'
 import WithdrawButton from 'views/Pottery/components/Pot/Claim/WithdrawButton'
 import { calculateCakeAmount } from 'views/Pottery/helpers'
 import { getDrawnDate } from 'views/Lottery/helpers'
-import { addDays } from 'date-fns'
+import dayjs from 'dayjs'
 
 interface AvailableWithdrawProps {
   withdrawData: PotteryWithdrawAbleData
@@ -19,7 +19,7 @@ const AvailableWithdraw: React.FC<React.PropsWithChildren<AvailableWithdrawProps
     t,
     currentLanguage: { locale },
   } = useTranslation()
-  const cakePriceBusd = usePriceCakeBusd()
+  const cakePrice = useCakePrice()
   const { previewRedeem, lockedDate, shares, status, potteryVaultAddress, totalSupply, totalLockCake, balanceOf } =
     withdrawData
 
@@ -33,12 +33,12 @@ const AvailableWithdraw: React.FC<React.PropsWithChildren<AvailableWithdrawProps
   })
 
   const amount = getBalanceNumber(amountAsBn)
-  const amountInBusd = new BigNumber(amount).times(cakePriceBusd).toNumber()
+  const amountInBusd = new BigNumber(amount).times(cakePrice).toNumber()
 
   const lockDate = useMemo(() => getDrawnDate(locale, lockedDate?.toString()), [lockedDate, locale])
-  const withdrawableDate = addDays(new Date(parseInt(lockedDate, 10) * 1000), 70).getTime()
+  const withdrawableDate = dayjs.unix(parseInt(lockedDate, 10)).add(70, 'days').unix()
   const withdrawableDateStr = useMemo(
-    () => getDrawnDate(locale, (withdrawableDate / 1000).toString()),
+    () => getDrawnDate(locale, withdrawableDate.toString()),
     [withdrawableDate, locale],
   )
 

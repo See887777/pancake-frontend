@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import styled, { keyframes } from "styled-components";
+import { keyframes, styled } from "styled-components";
 import Flex from "../../../components/Box/Flex";
 import { LogoIcon, LogoWithTextIcon } from "../../../components/Svg";
 import { MenuContext } from "../context";
@@ -15,17 +15,16 @@ const blink = keyframes`
 
 const StyledLink = styled("a")`
   display: flex;
-  align-items: center;
   .mobile-icon {
     width: 32px;
-    ${({ theme }) => theme.mediaQueries.lg} {
+    ${({ theme }) => theme.mediaQueries.xl} {
       display: none;
     }
   }
   .desktop-icon {
     width: 160px;
     display: none;
-    ${({ theme }) => theme.mediaQueries.lg} {
+    ${({ theme }) => theme.mediaQueries.xl} {
       display: block;
     }
   }
@@ -53,7 +52,7 @@ const Logo: React.FC<React.PropsWithChildren<Props>> = ({ href }) => {
   );
 
   return (
-    <Flex>
+    <Flex alignItems="center">
       {isAbsoluteUrl ? (
         <StyledLink as="a" href={href} aria-label="Pancake home page">
           {innerLogo}

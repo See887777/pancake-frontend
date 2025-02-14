@@ -1,21 +1,20 @@
-import BigNumber from 'bignumber.js'
-import {
-  SerializedPool,
-  SerializedCakeVault,
-  DeserializedCakeVault,
-  SerializedLockedCakeVault,
-  VaultKey,
-} from 'state/types'
-import { SerializedFarm } from '@pancakeswap/farms'
+import { DeserializedPool } from '@pancakeswap/pools'
+import { Token } from '@pancakeswap/sdk'
 import { deserializeToken } from '@pancakeswap/token-lists'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { isAddress } from 'utils'
+import BigNumber from 'bignumber.js'
+import {
+  DeserializedCakeVault,
+  SerializedCakeVault,
+  SerializedLockedCakeVault,
+  SerializedPool,
+  VaultKey,
+} from 'state/types'
+import { safeGetAddress } from 'utils'
 import { convertSharesToCake } from 'views/Pools/helpers'
-import { Token } from '@pancakeswap/sdk'
-import { Pool } from '@pancakeswap/uikit'
 
 type UserData =
-  | Pool.DeserializedPool<Token>['userData']
+  | DeserializedPool<Token>['userData']
   | {
       allowance: number | string
       stakingTokenBalance: number | string
@@ -43,29 +42,29 @@ const transformProfileRequirement = (profileRequirement?: { required: boolean; t
     : undefined
 }
 
-export const transformPool = (pool: SerializedPool): Pool.DeserializedPool<Token> => {
+export const transformPool = (pool: SerializedPool): DeserializedPool<Token> => {
   const {
     totalStaked,
     stakingLimit,
-    numberBlocksForUserLimit,
+    numberSecondsForUserLimit,
     userData,
     stakingToken,
     earningToken,
     profileRequirement,
-    startBlock,
+    startTimestamp,
     ...rest
   } = pool
 
   return {
     ...rest,
-    startBlock,
+    startTimestamp,
     profileRequirement: transformProfileRequirement(profileRequirement),
     stakingToken: deserializeToken(stakingToken),
     earningToken: deserializeToken(earningToken),
     userData: transformUserData(userData),
-    totalStaked: new BigNumber(totalStaked),
-    stakingLimit: new BigNumber(stakingLimit),
-    stakingLimitEndBlock: numberBlocksForUserLimit + startBlock,
+    totalStaked: new BigNumber(totalStaked || '0'),
+    stakingLimit: new BigNumber(stakingLimit || '0'),
+    stakingLimitEndTimestamp: (numberSecondsForUserLimit || 0) + (startTimestamp || 0),
   }
 }
 
@@ -104,8 +103,8 @@ export const transformVault = (vaultKey: VaultKey, vault: SerializedCakeVault): 
       },
     } = vault as SerializedLockedCakeVault
 
-    const totalCakeInVault = new BigNumber(totalCakeInVaultAsString)
-    const totalLockedAmount = new BigNumber(totalLockedAmountAsString)
+    const totalCakeInVault = new BigNumber(totalCakeInVaultAsString || '0')
+    const totalLockedAmount = new BigNumber(totalLockedAmountAsString || '0')
     const lockedAmount = new BigNumber(lockedAmountAsString)
     const userBoostedShare = new BigNumber(userBoostedShareAsString)
     const currentOverdueFee = currentOverdueFeeAsString ? new BigNumber(currentOverdueFeeAsString) : BIG_ZERO
@@ -156,10 +155,17 @@ export const transformVault = (vaultKey: VaultKey, vault: SerializedCakeVault): 
   }
 }
 
-export const getTokenPricesFromFarm = (farms: SerializedFarm[]) => {
+export const getTokenPricesFromFarm = (
+  farms: {
+    quoteToken: { address: string }
+    token: { address: string }
+    quoteTokenPriceBusd: string
+    tokenPriceBusd: string
+  }[],
+) => {
   return farms.reduce((prices, farm) => {
-    const quoteTokenAddress = isAddress(farm.quoteToken.address)
-    const tokenAddress = isAddress(farm.token.address)
+    const quoteTokenAddress = safeGetAddress(farm.quoteToken.address)
+    const tokenAddress = safeGetAddress(farm.token.address)
     /* eslint-disable no-param-reassign */
     if (quoteTokenAddress && !prices[quoteTokenAddress]) {
       prices[quoteTokenAddress] = new BigNumber(farm.quoteTokenPriceBusd).toNumber()

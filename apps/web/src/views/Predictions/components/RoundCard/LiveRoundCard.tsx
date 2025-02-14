@@ -1,21 +1,22 @@
-import { useEffect, useState } from 'react'
-import { Card, CardBody, Flex, PlayCircleOutlineIcon, Text, useTooltip } from '@pancakeswap/uikit'
-import { getNow } from 'utils/getNow'
 import { useTranslation } from '@pancakeswap/localization'
-import { NodeRound, NodeLedger, BetPosition } from 'state/types'
-import { useGetBufferSeconds } from 'state/predictions/hooks'
-import { getHasRoundFailed } from 'state/predictions/helpers'
-import usePollOraclePrice from 'views/Predictions/hooks/usePollOraclePrice'
+import { BetPosition } from '@pancakeswap/prediction'
+import { Card, CardBody, Flex, PlayCircleOutlineIcon, Text, useTooltip } from '@pancakeswap/uikit'
 import RoundProgress from 'components/RoundProgress'
+import { useEffect, useMemo, useState } from 'react'
+import { getHasRoundFailed } from 'state/predictions/helpers'
+import { useGetBufferSeconds } from 'state/predictions/hooks'
+import { NodeLedger, NodeRound } from 'state/types'
+import { getNowInSeconds } from 'utils/getNowInSeconds'
+import usePollOraclePrice from 'views/Predictions/hooks/usePollOraclePrice'
+import { useConfig } from '../../context/ConfigProvider'
 import { formatUsdv2, getPriceDifference } from '../../helpers'
 import PositionTag from '../PositionTag'
-import { RoundResultBox, LockPriceRow, PrizePoolRow } from '../RoundResult'
-import MultiplierArrow from './MultiplierArrow'
-import CardHeader from './CardHeader'
-import CanceledRoundCard from './CanceledRoundCard'
+import { LockPriceRow, PrizePoolRow, RoundResultBox } from '../RoundResult'
 import CalculatingCard from './CalculatingCard'
+import CanceledRoundCard from './CanceledRoundCard'
+import CardHeader from './CardHeader'
 import LiveRoundPrice from './LiveRoundPrice'
-import { useConfig } from '../../context/ConfigProvider'
+import MultiplierArrow from './MultiplierArrow'
 
 interface LiveRoundCardProps {
   round: NodeRound
@@ -28,6 +29,8 @@ interface LiveRoundCardProps {
 
 const REFRESH_PRICE_BEFORE_SECONDS_TO_CLOSE = 2
 
+const SHOW_HOUSE_BEFORE_SECONDS_TO_CLOSE = 20
+
 const LiveRoundCard: React.FC<React.PropsWithChildren<LiveRoundCardProps>> = ({
   round,
   betAmount,
@@ -38,23 +41,36 @@ const LiveRoundCard: React.FC<React.PropsWithChildren<LiveRoundCardProps>> = ({
 }) => {
   const { t } = useTranslation()
   const { lockPrice, totalAmount, lockTimestamp, closeTimestamp } = round
-  const { price, refresh } = usePollOraclePrice()
   const bufferSeconds = useGetBufferSeconds()
-  const { minPriceUsdDisplayed, displayedDecimals } = useConfig()
+  const config = useConfig()
+  const { price, refresh } = usePollOraclePrice({
+    chainlinkOracleAddress: config?.chainlinkOracleAddress,
+    galetoOracleAddress: config?.galetoOracleAddress,
+  })
 
   const [isCalculatingPhase, setIsCalculatingPhase] = useState(false)
 
-  const isBull = lockPrice && price.gt(lockPrice)
+  const isHouse = useMemo(() => {
+    const secondsToClose = closeTimestamp ? closeTimestamp - getNowInSeconds() : 0
+    return Boolean(lockPrice && price === lockPrice && secondsToClose <= SHOW_HOUSE_BEFORE_SECONDS_TO_CLOSE)
+  }, [closeTimestamp, lockPrice, price])
 
-  const priceDifference = getPriceDifference(price, lockPrice)
-  const hasRoundFailed = getHasRoundFailed(round.oracleCalled, round.closeTimestamp, bufferSeconds)
+  const isBull = Boolean(lockPrice && price > lockPrice)
 
-  const { targetRef, tooltip, tooltipVisible } = useTooltip(t('Last price from Chainlink Oracle'), {
-    placement: 'bottom',
-  })
+  const betPosition = isHouse ? BetPosition.HOUSE : isBull ? BetPosition.BULL : BetPosition.BEAR
+
+  const priceDifference = getPriceDifference(price, lockPrice ?? 0n)
+  const hasRoundFailed = getHasRoundFailed(round.oracleCalled, round.closeTimestamp, bufferSeconds, round.closePrice)
+
+  const { targetRef, tooltip, tooltipVisible } = useTooltip(
+    config?.chainlinkOracleAddress ? t('Last price from Chainlink Oracle') : t('Last price from Pyth Oracle'),
+    {
+      placement: 'bottom',
+    },
+  )
 
   useEffect(() => {
-    const secondsToClose = closeTimestamp ? closeTimestamp - getNow() : 0
+    const secondsToClose = closeTimestamp ? closeTimestamp - getNowInSeconds() : 0
     if (secondsToClose > 0) {
       const refreshPriceTimeout = setTimeout(() => {
         refresh()
@@ -88,27 +104,37 @@ const LiveRoundCard: React.FC<React.PropsWithChildren<LiveRoundCardProps>> = ({
         title={t('Live')}
         epoch={round.epoch}
       />
-      <RoundProgress variant="flat" scale="sm" lockTimestamp={lockTimestamp} closeTimestamp={closeTimestamp} />
+      <RoundProgress
+        variant="flat"
+        scale="sm"
+        lockTimestamp={lockTimestamp ?? 0}
+        closeTimestamp={closeTimestamp ?? 0}
+      />
       <CardBody p="16px">
         <MultiplierArrow
           betAmount={betAmount}
           multiplier={bullMultiplier}
           hasEntered={hasEnteredUp}
-          isActive={isBull}
+          isActive={isHouse ? false : isBull}
+          isHouse={isHouse}
         />
-        <RoundResultBox betPosition={isBull ? BetPosition.BULL : BetPosition.BEAR}>
+        <RoundResultBox betPosition={betPosition}>
           <Text color="textSubtle" fontSize="12px" bold textTransform="uppercase" mb="8px">
             {t('Last Price')}
           </Text>
           <Flex alignItems="center" justifyContent="space-between" mb="16px" height="36px">
             <div ref={targetRef}>
-              <LiveRoundPrice isBull={isBull} price={price} />
+              <LiveRoundPrice
+                betPosition={betPosition}
+                price={price}
+                displayedDecimals={config?.displayedDecimals ?? 4}
+              />
             </div>
-            <PositionTag betPosition={isBull ? BetPosition.BULL : BetPosition.BEAR}>
-              {formatUsdv2(priceDifference, minPriceUsdDisplayed, displayedDecimals)}
+            <PositionTag betPosition={betPosition}>
+              {formatUsdv2(priceDifference, config?.displayedDecimals ?? 0)}
             </PositionTag>
           </Flex>
-          {lockPrice && <LockPriceRow lockPrice={lockPrice} />}
+          {lockPrice?.toString() && <LockPriceRow lockPrice={lockPrice} />}
           <PrizePoolRow totalAmount={totalAmount} />
         </RoundResultBox>
         <MultiplierArrow
@@ -116,7 +142,8 @@ const LiveRoundCard: React.FC<React.PropsWithChildren<LiveRoundCardProps>> = ({
           multiplier={bearMultiplier}
           betPosition={BetPosition.BEAR}
           hasEntered={hasEnteredDown}
-          isActive={!isBull}
+          isActive={isHouse ? false : !isBull}
+          isHouse={isHouse}
         />
       </CardBody>
       {tooltipVisible && tooltip}

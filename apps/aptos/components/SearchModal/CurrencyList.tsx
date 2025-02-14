@@ -1,12 +1,12 @@
 import { Currency, CurrencyAmount, Token } from '@pancakeswap/aptos-swap-sdk'
-import { APTOS_COIN, useAccount, useAccountBalance } from '@pancakeswap/awgmi'
+import { APTOS_COIN, useAccount, useBalance } from '@pancakeswap/awgmi'
 import { useTranslation } from '@pancakeswap/localization'
 import { CircleLoader, Column, QuestionHelper, RowBetween, RowFixed, Text } from '@pancakeswap/uikit'
 import { LightGreyCard } from 'components/Card'
 import useNativeCurrency from 'hooks/useNativeCurrency'
-import { CSSProperties, MutableRefObject, useCallback, useMemo } from 'react'
+import { CSSProperties, MutableRefObject, ReactNode, useCallback, useMemo } from 'react'
 import { FixedSizeList } from 'react-window'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { useIsUserAddedToken } from '../../hooks/Tokens'
 import { useCombinedActiveList } from '../../state/lists/hooks'
 import { isTokenOnList } from '../../utils'
@@ -46,7 +46,7 @@ const MenuItem = styled(RowBetween)<{ disabled: boolean; selected: boolean }>`
   grid-gap: 8px;
   cursor: ${({ disabled }) => !disabled && 'pointer'};
   pointer-events: ${({ disabled }) => disabled && 'none'};
-  :hover {
+  &:hover {
     background-color: ${({ theme, disabled }) => !disabled && theme.colors.background};
   }
   opacity: ${({ disabled, selected }) => (disabled || selected ? 0.5 : 1)};
@@ -71,7 +71,7 @@ function CurrencyRow({
   const selectedTokenList = useCombinedActiveList()
   const isOnSelectedList = isTokenOnList(selectedTokenList, currency)
   const customAdded = useIsUserAddedToken(currency)
-  const { data: balance, isLoading } = useAccountBalance({
+  const { data: balance, isLoading } = useBalance({
     address: account,
     coin: key,
     watch: true,
@@ -143,7 +143,7 @@ export default function CurrencyList({
   const { t } = useTranslation()
 
   const Row = useCallback(
-    ({ data, index, style }): JSX.Element => {
+    ({ data, index, style }): ReactNode => {
       const currency: Currency = data[index]
       const isSelected = Boolean(selectedCurrency && currency && selectedCurrency.equals(currency))
       const otherSelected = Boolean(otherCurrency && currency && otherCurrency.equals(currency))
@@ -173,7 +173,14 @@ export default function CurrencyList({
 
       if (showImport && token) {
         return (
-          <ImportRow style={style} token={token} showImportView={showImportView} setImportToken={setImportToken} dim />
+          <ImportRow
+            onCurrencySelect={handleSelect}
+            style={style}
+            token={token}
+            showImportView={showImportView}
+            setImportToken={setImportToken}
+            dim
+          />
         )
       }
       return (

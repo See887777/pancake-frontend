@@ -1,16 +1,15 @@
-import { useEffect, useState } from 'react'
-import { Flex, Card, Text, Table, Th, ArrowBackIcon, ArrowForwardIcon, useMatchBreakpoints } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
+import { Card, Flex, PaginationButton, Table, Text, Th, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { useBNBPrice } from 'hooks/useBNBPrice'
 import useTheme from 'hooks/useTheme'
+import { useEffect, useState } from 'react'
 import { Activity, NftToken } from 'state/nftMarket/types'
-import { useBNBBusdPrice } from 'hooks/useBUSDPrice'
-import { useAppDispatch } from '../../../../../../state'
-import NoNftsImage from '../../../components/Activity/NoNftsImage'
 import TableLoader from '../../../../../../components/TableLoader'
-import { Arrow, PageButtons } from '../../../components/PaginationButtons'
+import { useAppDispatch } from '../../../../../../state'
 import { getTokenActivity } from '../../../../../../state/nftMarket/helpers'
 import { sortActivity } from '../../../ActivityHistory/utils/sortActivity'
 import ActivityRow from '../../../components/Activity/ActivityRow'
+import NoNftsImage from '../../../components/Activity/NoNftsImage'
 
 interface ActivityCardProps {
   nft: NftToken
@@ -27,7 +26,7 @@ const ActivityCard: React.FC<React.PropsWithChildren<ActivityCardProps>> = ({ nf
   const [activitiesSlice, setActivitiesSlice] = useState<Activity[]>([])
   const [sortedTokenActivities, setSortedTokenActivities] = useState<Activity[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const bnbBusdPrice = useBNBBusdPrice()
+  const bnbBusdPrice = useBNBPrice()
   const { isXs, isSm } = useMatchBreakpoints()
 
   useEffect(() => {
@@ -105,7 +104,7 @@ const ActivityCard: React.FC<React.PropsWithChildren<ActivityCardProps>> = ({ nf
                 activitiesSlice.map((activity) => {
                   return (
                     <ActivityRow
-                      key={`${activity.nft.tokenId}${activity.timestamp}`}
+                      key={`${activity.nft?.tokenId}${activity.timestamp}`}
                       activity={activity}
                       nft={nft}
                       bnbBusdPrice={bnbBusdPrice}
@@ -123,23 +122,12 @@ const ActivityCard: React.FC<React.PropsWithChildren<ActivityCardProps>> = ({ nf
             justifyContent="space-between"
             height="100%"
           >
-            <PageButtons>
-              <Arrow
-                onClick={() => {
-                  setCurrentPage(currentPage === 1 ? currentPage : currentPage - 1)
-                }}
-              >
-                <ArrowBackIcon color={currentPage === 1 ? 'textDisabled' : 'primary'} />
-              </Arrow>
-              <Text>{t('Page %page% of %maxPage%', { page: currentPage, maxPage })}</Text>
-              <Arrow
-                onClick={() => {
-                  setCurrentPage(currentPage === maxPage ? currentPage : currentPage + 1)
-                }}
-              >
-                <ArrowForwardIcon color={currentPage === maxPage ? 'textDisabled' : 'primary'} />
-              </Arrow>
-            </PageButtons>
+            <PaginationButton
+              showMaxPageText
+              currentPage={currentPage}
+              maxPage={maxPage}
+              setCurrentPage={setCurrentPage}
+            />
           </Flex>
         </>
       )}

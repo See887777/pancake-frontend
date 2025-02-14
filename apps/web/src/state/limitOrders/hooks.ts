@@ -1,23 +1,22 @@
-import JSBI from 'jsbi'
-import { useDispatch, useSelector } from 'react-redux'
-import { ParsedUrlQuery } from 'querystring'
-import { Currency, CurrencyAmount, Trade, Token, Price, Native, TradeType } from '@pancakeswap/sdk'
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { DEFAULT_INPUT_CURRENCY, DEFAULT_OUTPUT_CURRENCY, BIG_INT_TEN } from 'config/constants/exchange'
-import { useRouter } from 'next/router'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { wrappedCurrency } from 'utils/wrappedCurrency'
+import { useTranslation } from '@pancakeswap/localization'
+import { Currency, CurrencyAmount, Native, Price, Token, Trade, TradeType } from '@pancakeswap/sdk'
+import tryParseAmount from '@pancakeswap/utils/tryParseAmount'
+import { BIG_INT_TEN, DEFAULT_INPUT_CURRENCY, DEFAULT_OUTPUT_CURRENCY } from 'config/constants/exchange'
 import { useCurrency } from 'hooks/Tokens'
 import { useTradeExactIn, useTradeExactOut } from 'hooks/Trades'
-import getPriceForOneToken from 'views/LimitOrders/utils/getPriceForOneToken'
-import { isAddress } from 'utils'
-import tryParseAmount from '@pancakeswap/utils/tryParseAmount'
-import { useTranslation } from '@pancakeswap/localization'
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
 import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useAtom, useAtomValue } from 'jotai'
+import { useRouter } from 'next/router'
+import { ParsedUrlQuery } from 'querystring'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { limitReducerAtom } from 'state/limitOrders/reducer'
+import { safeGetAddress } from 'utils'
+import { wrappedCurrency } from 'utils/wrappedCurrency'
+import getPriceForOneToken from 'views/LimitOrders/utils/getPriceForOneToken'
 import { useCurrencyBalances } from '../wallet/hooks'
 import { replaceLimitOrdersState, selectCurrency, setRateType, switchCurrencies, typeInput } from './actions'
-import { Field, Rate, OrderState } from './types'
-import { AppState, useAppDispatch } from '..'
+import { Field, OrderState, Rate } from './types'
 
 // Get desired input amount in output basis mode
 const getDesiredInput = (
@@ -37,16 +36,15 @@ const getDesiredInput = (
   }
 
   if (isInverted) {
-    const invertedResultAsFraction = parsedOutAmount
-      .multiply(parsedExchangeRate.asFraction)
-      .multiply(JSBI.exponentiate(BIG_INT_TEN, JSBI.BigInt(inputCurrency.decimals)))
+    const invertedResultAsFraction = parsedOutAmount.multiply(parsedExchangeRate.asFraction)
+
     const invertedResultAsAmount = CurrencyAmount.fromRawAmount(inputCurrency, invertedResultAsFraction.toFixed(0))
 
     return invertedResultAsAmount
   }
   const resultAsFraction = parsedOutAmount
     .divide(parsedExchangeRate.asFraction)
-    .multiply(JSBI.exponentiate(BIG_INT_TEN, JSBI.BigInt(inputCurrency.decimals)))
+    .multiply(BIG_INT_TEN ** BigInt(inputCurrency.decimals))
 
   return CurrencyAmount.fromRawAmount(inputCurrency, resultAsFraction.quotient.toString())
 }
@@ -71,21 +69,21 @@ const getDesiredOutput = (
 
   if (isInverted) {
     const invertedResultAsFraction = parsedInputAmount
-      .multiply(JSBI.exponentiate(BIG_INT_TEN, JSBI.BigInt(inputCurrency.decimals)))
+      .multiply(BIG_INT_TEN ** BigInt(inputCurrency.decimals))
       .divide(parsedExchangeRate.asFraction)
     return CurrencyAmount.fromRawAmount(outputCurrency, invertedResultAsFraction.quotient)
   }
 
   const resultAsFraction = parsedInputAmount
-    .divide(JSBI.exponentiate(BIG_INT_TEN, JSBI.BigInt(inputCurrency.decimals)))
+    .divide(BIG_INT_TEN ** BigInt(inputCurrency.decimals))
     .multiply(parsedExchangeRate.asFraction)
 
   return CurrencyAmount.fromRawAmount(outputCurrency, resultAsFraction.quotient.toString())
 }
 
-// Just returns Redux state for limitOrders
-export const useOrderState = (): AppState['limitOrders'] => {
-  return useSelector<AppState, AppState['limitOrders']>((state) => state.limitOrders)
+// Just returns state for limitOrders
+export function useOrderState() {
+  return useAtomValue(limitReducerAtom)
 }
 
 // Returns handlers to change user-defined parts of limitOrders state
@@ -95,7 +93,7 @@ export const useOrderActionHandlers = (): {
   onUserInput: (field: Field, typedValue: string) => void
   onChangeRateType: (rateType: Rate) => void
 } => {
-  const dispatch = useDispatch()
+  const [, dispatch] = useAtom(limitReducerAtom)
   const onCurrencySelection = useCallback(
     (field: Field, currency: Currency) => {
       dispatch(
@@ -134,6 +132,10 @@ export const useOrderActionHandlers = (): {
   }
 }
 
+interface SignleTokenPrice {
+  [key: string]: number
+}
+
 export interface DerivedOrderInfo {
   currencies: { input: Currency | Token | undefined; output: Currency | Token | undefined }
   currencyBalances: {
@@ -157,82 +159,23 @@ export interface DerivedOrderInfo {
   }
   price: Price<Currency, Currency> | undefined
   wrappedCurrencies: {
-    input: Token
-    output: Token
+    input?: Token
+    output?: Token
   }
-  singleTokenPrice: {
-    [key: string]: number
-  }
+  singleTokenPrice: SignleTokenPrice
   currencyIds: {
-    input: string
-    output: string
+    input?: string
+    output?: string
   }
 }
 
-const getErrorMessage = (
-  account: string,
-  wrappedCurrencies: {
-    input: Token
-    output: Token
-  },
-  currencies: { input: Currency | Token; output: Currency | Token },
-  currencyBalances: { input: CurrencyAmount<Currency>; output: CurrencyAmount<Currency> },
-  parsedAmounts: { input: CurrencyAmount<Currency>; output: CurrencyAmount<Currency> },
-  trade: Trade<Currency, Currency, TradeType>,
-  price: Price<Currency, Currency>,
-  rateType: Rate,
-  t: any,
-) => {
-  if (!account) {
-    return t('Connect Wallet')
-  }
-  if (
-    wrappedCurrencies.input &&
-    wrappedCurrencies.output &&
-    wrappedCurrencies.input.address.toLowerCase() === wrappedCurrencies.output.address.toLowerCase()
-  ) {
-    return t('Order not allowed')
-  }
-  const hasBothTokensSelected = currencies.input && currencies.output
-  if (!hasBothTokensSelected) {
-    return t('Select a token')
-  }
-  const hasAtLeastOneParsedAmount = parsedAmounts.input || parsedAmounts.output
-
-  const tradeIsNotAvailable = !trade || !trade?.route
-  if (hasAtLeastOneParsedAmount && tradeIsNotAvailable) {
-    return t('Insufficient liquidity for this trade.')
-  }
-  const someParsedAmountIsMissing = !parsedAmounts.input || !parsedAmounts.output
-  if (someParsedAmountIsMissing) {
-    return t('Enter an amount')
-  }
-  if (currencyBalances.input && currencyBalances.input.lessThan(parsedAmounts.input)) {
-    return t(`Insufficient %symbol% balance`, { symbol: currencyBalances.input.currency.symbol })
-  }
-
-  if (price) {
-    if (
-      rateType === Rate.MUL &&
-      (price.lessThan(trade.executionPrice.asFraction) || price.equalTo(trade.executionPrice.asFraction))
-    ) {
-      return t('Only possible to place sell orders above market rate')
-    }
-    if (
-      rateType === Rate.DIV &&
-      (price.invert().greaterThan(trade.executionPrice.invert().asFraction) ||
-        price.invert().equalTo(trade.executionPrice.invert().asFraction))
-    ) {
-      return t('Only possible to place buy orders below market rate')
-    }
-  }
-
-  return undefined
+const getErrorMessage = ({ t }: { t: any }) => {
+  return t('Placing Order Disabled')
 }
 
 // from the current swap inputs, compute the best trade and return it.
 export const useDerivedOrderInfo = (): DerivedOrderInfo => {
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const { t } = useTranslation()
   const {
     independentField,
@@ -292,13 +235,15 @@ export const useDerivedOrderInfo = (): DerivedOrderInfo => {
   const isDesiredRateUpdate = independentField === Field.PRICE
 
   // Get the amount of outputCurrency you'd receive at the desired price
-  const desiredOutputAsCurrencyAmount = isDesiredRateUpdate
-    ? getDesiredOutput(inputValue, typedValue, inputCurrency, outputCurrency, rateType === Rate.DIV)
-    : undefined
+  const desiredOutputAsCurrencyAmount =
+    isDesiredRateUpdate && inputValue && inputCurrency && outputCurrency
+      ? getDesiredOutput(inputValue, typedValue, inputCurrency, outputCurrency, rateType === Rate.DIV)
+      : undefined
 
-  const desiredInputAsCurrencyAmount = isDesiredRateUpdate
-    ? getDesiredInput(outputValue, typedValue, inputCurrency, outputCurrency, rateType === Rate.DIV)
-    : undefined
+  const desiredInputAsCurrencyAmount =
+    isDesiredRateUpdate && outputValue && inputCurrency && outputCurrency
+      ? getDesiredInput(outputValue, typedValue, inputCurrency, outputCurrency, rateType === Rate.DIV)
+      : undefined
 
   // Convert output to string representation to parse later
   const desiredOutputAsString =
@@ -319,18 +264,21 @@ export const useDerivedOrderInfo = (): DerivedOrderInfo => {
 
   // Get trade object
   // gonna be null if not isExactIn or if there is no outputCurrency selected
-  const bestTradeExactIn = useTradeExactIn(isExactIn ? tradeAmount : undefined, outputCurrency)
+  const bestTradeExactIn = useTradeExactIn(isExactIn ? tradeAmount : undefined, outputCurrency as Currency)
   // Works similarly to swap when you modify outputCurrency
   // But also is used when desired rate is modified
   // in other words it looks for a trade of inputCurrency for whatever the amount of tokens would be at desired rate
-  const bestTradeExactOut = useTradeExactOut(inputCurrency, !isExactIn || isOutputBasis ? tradeAmount : undefined)
+  const bestTradeExactOut = useTradeExactOut(
+    inputCurrency as Currency,
+    !isExactIn || isOutputBasis ? tradeAmount : undefined,
+  )
   const trade = isExactIn ? bestTradeExactIn : bestTradeExactOut
 
   // Get swap price for single token disregarding slippage and price impact
   // needed for chart's latest value
   const oneInputToken = tryParseAmount('1', currencies.input)
   const singleTokenTrade = useTradeExactIn(oneInputToken, currencies.output)
-  const singleTokenPrice = parseFloat(singleTokenTrade?.executionPrice?.toSignificant(6))
+  const singleTokenPrice = parseFloat(singleTokenTrade?.executionPrice?.toSignificant(6) || '')
   const inverseSingleTokenPrice = 1 / singleTokenPrice
 
   // Get "final" amounts
@@ -350,7 +298,7 @@ export const useDerivedOrderInfo = (): DerivedOrderInfo => {
     }
     // Use trade amount as default
     // If we're in output basis mode - no matter what keep output as specified by user
-    let output: CurrencyAmount<Currency>
+    let output: CurrencyAmount<Currency> | undefined
     if (isOutputBasis) {
       output = outputAmount
     } else if (independentField === Field.OUTPUT) {
@@ -401,42 +349,39 @@ export const useDerivedOrderInfo = (): DerivedOrderInfo => {
   const rawAmounts = useMemo(
     () => ({
       input: inputCurrency
-        ? parsedAmounts.input?.multiply(JSBI.exponentiate(BIG_INT_TEN, JSBI.BigInt(inputCurrency.decimals))).toFixed(0)
+        ? parsedAmounts?.input?.multiply(BIG_INT_TEN ** BigInt(inputCurrency.decimals))?.toFixed(0)
         : undefined,
 
       output: outputCurrency
-        ? parsedAmounts.output
-            ?.multiply(JSBI.exponentiate(BIG_INT_TEN, JSBI.BigInt(outputCurrency.decimals)))
-            .toFixed(0)
+        ? parsedAmounts?.output?.multiply(BIG_INT_TEN ** BigInt(outputCurrency.decimals))?.toFixed(0)
         : undefined,
     }),
     [inputCurrency, outputCurrency, parsedAmounts],
   )
 
+  const singleTokenPriceResult: SignleTokenPrice = {}
+
+  if (wrappedCurrencies.input?.address) {
+    singleTokenPriceResult[wrappedCurrencies.input.address] = singleTokenPrice
+  }
+
+  if (wrappedCurrencies.output?.address) {
+    singleTokenPriceResult[wrappedCurrencies.output.address] = inverseSingleTokenPrice
+  }
+
   return {
     currencies,
     currencyBalances,
-    inputError: getErrorMessage(
-      account,
-      wrappedCurrencies,
-      currencies,
-      currencyBalances,
-      parsedAmounts,
-      trade,
-      price,
-      rateType,
+    inputError: getErrorMessage({
       t,
-    ),
+    }),
     formattedAmounts,
     trade: trade ?? undefined,
     parsedAmounts,
     price,
     rawAmounts,
     wrappedCurrencies,
-    singleTokenPrice: {
-      [wrappedCurrencies.input?.address]: singleTokenPrice,
-      [wrappedCurrencies.output?.address]: inverseSingleTokenPrice,
-    },
+    singleTokenPrice: singleTokenPriceResult,
     currencyIds: {
       input: inputCurrencyId,
       output: outputCurrencyId,
@@ -454,10 +399,10 @@ function parseIndependentFieldURLParameter(urlParam: any): Field {
 
 function parseCurrencyFromURLParameter(urlParam: any): string {
   if (typeof urlParam === 'string') {
-    const valid = isAddress(urlParam)
+    const valid = safeGetAddress(urlParam)
     if (valid) return valid
     if (urlParam.toUpperCase() === 'BNB') return 'BNB'
-    if (valid === false) return 'BNB'
+    if (valid === undefined) return 'BNB'
   }
   return ''
 }
@@ -497,7 +442,7 @@ export const useDefaultsFromURLSearch = ():
   | { inputCurrencyId: string | undefined; outputCurrencyId: string | undefined }
   | undefined => {
   const { chainId } = useActiveChainId()
-  const dispatch = useAppDispatch()
+  const [, dispatch] = useAtom(limitReducerAtom)
   const { query } = useRouter()
   const [result, setResult] = useState<
     { inputCurrencyId: string | undefined; outputCurrencyId: string | undefined } | undefined

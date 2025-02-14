@@ -1,13 +1,15 @@
-import { useCallback, memo } from 'react'
+import { useCallback, memo, useMemo } from 'react'
 import { Trade, Currency, TradeType, CurrencyAmount } from '@pancakeswap/aptos-swap-sdk'
 import { InjectedModalProps, LinkExternal, Text } from '@pancakeswap/uikit'
-import { TransactionErrorContent, TransactionSubmittedContent } from 'components/TransactionConfirmationModal'
+import { TransactionErrorContent, ConfirmationPendingContent } from '@pancakeswap/widgets-internal'
+
+import { TransactionSubmittedContent } from 'components/TransactionConfirmationModal'
 import { Field } from 'state/swap'
 import { useTranslation } from '@pancakeswap/localization'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import ConfirmationPendingContent from './ConfirmationPendingContent'
+import { useActiveChainId } from 'hooks/useNetwork'
 import TransactionConfirmSwapContent from './TransactionConfirmSwapContent'
 import ConfirmSwapModalContainer from './ConfirmSwapModalContainer'
+import formatAmountDisplay from '../../utils/formatAmountDisplay'
 
 const PancakeRouterSlippageErrorMsg =
   'This transaction will not succeed either due to price movement or fee on transfer. Try increasing your slippage tolerance.'
@@ -80,7 +82,8 @@ const ConfirmSwapModal: React.FC<React.PropsWithChildren<InjectedModalProps & Co
   txHash,
   openSettingModal,
 }) => {
-  const { chainId } = useActiveWeb3React()
+  const chainId = useActiveChainId()
+  const { t } = useTranslation()
 
   const handleDismiss = useCallback(() => {
     if (customOnDismiss) {
@@ -122,12 +125,22 @@ const ConfirmSwapModal: React.FC<React.PropsWithChildren<InjectedModalProps & Co
     ],
   )
 
+  // text to show while loading
+  const pendingText = useMemo(() => {
+    return t('Swapping %amountA% %symbolA% for %amountB% %symbolB%', {
+      amountA: formatAmountDisplay(trade?.inputAmount),
+      symbolA: trade?.inputAmount?.currency?.symbol ?? '',
+      amountB: formatAmountDisplay(trade?.outputAmount),
+      symbolB: trade?.outputAmount?.currency?.symbol ?? '',
+    })
+  }, [t, trade])
+
   if (!chainId || !trade) return null
 
   return (
     <ConfirmSwapModalContainer handleDismiss={handleDismiss}>
       {attemptingTxn ? (
-        <ConfirmationPendingContent trade={trade} />
+        <ConfirmationPendingContent pendingText={pendingText} />
       ) : txHash ? (
         <TransactionSubmittedContent chainId={chainId} hash={txHash} onDismiss={handleDismiss} />
       ) : (

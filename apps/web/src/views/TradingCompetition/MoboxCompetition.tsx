@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from '@pancakeswap/localization'
 import { useProfile } from 'state/profile/hooks'
-import { Box, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { Box, useMatchBreakpoints, PageSection } from '@pancakeswap/uikit'
 import { useTradingCompetitionContractMobox } from 'hooks/useContract'
 import useTheme from 'hooks/useTheme'
-import { PageMeta } from 'components/Layout/Page'
 import { TC_MOBOX_SUBGRAPH, API_PROFILE } from 'config/constants/endpoints'
 import orderBy from 'lodash/orderBy'
 import {
@@ -16,9 +15,8 @@ import {
   OVER,
   REGISTRATION,
 } from 'config/constants/trading-competition/phases'
-import PageSection from 'components/PageSection'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { ChainId } from '@pancakeswap/sdk'
+import { ChainId } from '@pancakeswap/chains'
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
 import { MIDBLUEBG, MIDBLUEBG_DARK, TRADINGCOMPETITIONBANNER } from './pageSectionStyles'
 import { RulesIcon } from './svgs'
 import Countdown from './components/Countdown'
@@ -41,12 +39,12 @@ import TeamRanksWithParticipants from './components/TeamRanks/TeamRanksWithParti
 import MoboxCakerBunny from './pngs/mobox-cakers.png'
 
 const MoboxCompetition = () => {
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const { t } = useTranslation()
   const { isMobile } = useMatchBreakpoints()
   const { profile, isLoading: isProfileLoading } = useProfile()
   const { isDark, theme } = useTheme()
-  const tradingCompetitionContract = useTradingCompetitionContractMobox(false)
+  const tradingCompetitionContract = useTradingCompetitionContractMobox()
   const [currentPhase, setCurrentPhase] = useState(() => {
     const now = Date.now()
     const actualPhase = orderBy(
@@ -101,13 +99,13 @@ const MoboxCompetition = () => {
   const finishedAndNothingToClaim = hasCompetitionEnded && account && !userCanClaimPrizes
   useEffect(() => {
     const fetchCompetitionInfoContract = async () => {
-      const competitionStatus = await tradingCompetitionContract.currentStatus()
+      const competitionStatus = await tradingCompetitionContract.read.currentStatus()
       setCurrentPhase(SmartContractPhases[competitionStatus])
     }
 
     const fetchUserContract = async () => {
       try {
-        const user = await tradingCompetitionContract.claimInformation(account)
+        const user = await tradingCompetitionContract.read.claimInformation([account || '0x'])
         const userObject = {
           isLoading: false,
           account,
@@ -124,7 +122,7 @@ const MoboxCompetition = () => {
           // that returns wrong canClaimNFT.
           // The bug is only in view function though, all other code is OK
           // recalculating canClaimNFT here to get proper boolean
-          canClaimNFT: user[3].gt(1),
+          canClaimNFT: user[3] > 1n,
         }
         setUserTradingInformation(userObject)
       } catch (error) {
@@ -169,7 +167,6 @@ const MoboxCompetition = () => {
 
   return (
     <>
-      <PageMeta />
       <CompetitionPage id="pcs-competition-page">
         <PageSection
           style={{ paddingTop: '0px' }}
@@ -246,12 +243,12 @@ const MoboxCompetition = () => {
             <Box my="64px">
               <TeamRanksWithParticipants
                 image={MoboxCakerBunny}
-                team1LeaderboardInformation={team1LeaderboardInformation}
-                team2LeaderboardInformation={team2LeaderboardInformation}
-                team3LeaderboardInformation={team3LeaderboardInformation}
-                globalLeaderboardInformation={globalLeaderboardInformation}
+                team1LeaderboardInformation={team1LeaderboardInformation as any}
+                team2LeaderboardInformation={team2LeaderboardInformation as any}
+                team3LeaderboardInformation={team3LeaderboardInformation as any}
+                globalLeaderboardInformation={globalLeaderboardInformation as any}
                 participantSubgraphAddress={TC_MOBOX_SUBGRAPH}
-                subgraphName="pancakeswap/trading-competition-v3"
+                subgraph={TC_MOBOX_SUBGRAPH}
               />
             </Box>
           </PageSection>
@@ -276,7 +273,7 @@ const MoboxCompetition = () => {
           </Box>
         </PageSection>
         <Footer
-          shouldHideCta={shouldHideCta}
+          shouldHideCta={Boolean(shouldHideCta)}
           image={StormBunny}
           userTradingInformation={userTradingInformation}
           currentPhase={currentPhase}

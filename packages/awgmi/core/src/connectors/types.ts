@@ -1,4 +1,9 @@
-import { AptosClient, Types } from 'aptos'
+import {
+  Aptos as AptosSDK,
+  InputGenerateTransactionOptions,
+  InputGenerateTransactionPayloadData,
+} from '@aptos-labs/ts-sdk'
+
 import { Address } from '../types'
 
 // https://aptos.dev/guides/building-your-own-wallet/#dapp-api
@@ -7,18 +12,19 @@ export interface SignMessagePayload {
   application?: boolean // Should we include the domain of the dapp
   chainId?: boolean // Should we include the current chain id the wallet is connected to
   message: string // The message to be signed and displayed to the user
-  nonce: number // A nonce the dapp should generate
+  nonce: string // A nonce the dapp should generate
 }
 
 export interface SignMessageResponse {
-  address: Address
-  application: string
-  chainId: number
+  address?: Address | string
+  application?: string
+  chainId?: number
   fullMessage: string // The message that was generated to sign
   message: string // The message passed in by the user
-  nonce: number
+  nonce: string
   prefix: 'APTOS' // Should always be APTOS
-  signature: string // The signed full message
+  signature: string | string[] // The signed full message
+  bitmap?: Uint8Array
 }
 
 export type Account = {
@@ -34,13 +40,27 @@ export interface Aptos {
   isConnected(): Promise<boolean>
   network(): Promise<string>
   signAndSubmitTransaction(
-    transaction: Types.TransactionPayload,
-    options?: Partial<Types.SubmitTransactionRequest>,
-  ): ReturnType<AptosClient['submitTransaction']>
+    transaction: InputGenerateTransactionPayloadData,
+    options?: Partial<InputGenerateTransactionOptions>,
+  ): ReturnType<AptosSDK['signAndSubmitTransaction']>
   signMessage(message?: SignMessagePayload): Promise<SignMessageResponse>
-  signTransaction(transaction: Types.TransactionPayload): ReturnType<AptosClient['signTransaction']>
+  signTransaction(
+    transaction: InputGenerateTransactionPayloadData,
+  ): Promise<ReturnType<AptosSDK['transaction']['sign']>>
   on?: any
   onAccountChange?(listener: (account: Account) => void): void
   onNetworkChange?(listener: (network: { networkName: string }) => void): void
   onDisconnect?(listener: () => void): void
+}
+
+export enum WalletAdapterNetwork {
+  Mainnet = 'mainnet',
+  Testnet = 'testnet',
+  Devnet = 'devnet',
+}
+
+export type NetworkInfo = {
+  api?: string
+  chainId?: string
+  name: WalletAdapterNetwork | undefined
 }

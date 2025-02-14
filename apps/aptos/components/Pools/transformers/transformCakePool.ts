@@ -6,8 +6,8 @@ import { FixedNumber } from '@ethersproject/bignumber'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
 import { SECONDS_IN_YEAR } from 'config'
 
-import { ACC_CAKE_PRECISION } from '../constants'
-import getFarmTokenPerSecond from '../utils/getFarmTokenPerSecond'
+import { CAKE_PID } from 'config/constants'
+import { calcRewardCakePerShare, calcPendingRewardCake } from 'state/farms/utils/pendingCake'
 
 export const getPoolApr = ({ rewardTokenPrice, stakingTokenPrice, tokenPerSecond, totalStaked }) => {
   const totalRewardPricePerYear = new BigNumber(rewardTokenPrice).times(tokenPerSecond).times(SECONDS_IN_YEAR)
@@ -41,8 +41,8 @@ const transformCakePool = ({
   cakeFarm,
   chainId,
   earningTokenPrice,
+  getNow,
 }) => {
-  const currentRewardDebt = _get(userInfo, 'reward_debt', '0')
   const userStakedAmount = _get(userInfo, 'amount', '0')
 
   const rewardPerSecond = getRewardPerSecondOfCakeFarm({
@@ -54,10 +54,10 @@ const transformCakePool = ({
   })
 
   let userData = {
-    allowance: new BigNumber(0),
-    pendingReward: new BigNumber(0),
-    stakedBalance: new BigNumber(0),
-    stakingTokenBalance: new BigNumber(0),
+    allowance: BIG_ZERO,
+    pendingReward: BIG_ZERO,
+    stakedBalance: BIG_ZERO,
+    stakingTokenBalance: BIG_ZERO,
   }
 
   const foundStakingBalance = balances?.find(
@@ -73,19 +73,14 @@ const transformCakePool = ({
   const totalStaked = _get(cakePoolInfo, 'total_amount', '0')
 
   if (_toNumber(userStakedAmount) && _toNumber(totalStaked)) {
-    const pendingReward = getFarmTokenPerSecond({
-      lastRewardTimestamp: _toNumber(cakePoolInfo.last_reward_timestamp),
-      rewardPerSecond,
-      currentRewardDebt,
-      tokenPerShare: cakePoolInfo.acc_cake_per_share,
-      precisionFactor: ACC_CAKE_PRECISION,
-      totalStake: cakePoolInfo.total_amount,
-      userStakedAmount,
-    })
+    const rewardDebt = _get(userInfo, 'reward_debt', '0')
+
+    const accCakePerShare = calcRewardCakePerShare(masterChefData, CAKE_PID, getNow)
+    const pendingReward = calcPendingRewardCake(userStakedAmount, rewardDebt, accCakePerShare)
 
     userData = {
       ...userData,
-      pendingReward: new BigNumber(pendingReward.toString()),
+      pendingReward,
       stakedBalance: new BigNumber(userStakedAmount),
     }
   }

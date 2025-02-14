@@ -1,5 +1,5 @@
-import { ChainId } from '@pancakeswap/sdk'
-import { createStore, Store } from 'redux'
+import { ChainId } from '@pancakeswap/chains'
+import { createStore, Store } from '@reduxjs/toolkit'
 import {
   addTransaction,
   checkedTransaction,
@@ -18,7 +18,7 @@ describe('transaction reducer', () => {
 
   describe('addTransaction', () => {
     it('adds the transaction', () => {
-      const beforeTime = new Date().getTime()
+      const beforeTime = Date.now()
       store.dispatch(
         addTransaction({
           chainId: ChainId.BSC,
@@ -71,7 +71,7 @@ describe('transaction reducer', () => {
           from: '0x0',
         }),
       )
-      const beforeTime = new Date().getTime()
+      const beforeTime = Date.now()
       store.dispatch(
         finalizeTransaction({
           chainId: ChainId.BSC_TESTNET,

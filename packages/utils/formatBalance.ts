@@ -1,29 +1,32 @@
 import BigNumber from 'bignumber.js'
-import { BigNumber as EthersBigNumber, FixedNumber } from '@ethersproject/bignumber'
-import { formatUnits } from '@ethersproject/units'
 import { getLanguageCodeFromLS } from '@pancakeswap/localization'
-import { getFullDecimalMultiplier } from '@pancakeswap/utils/getFullDecimalMultiplier'
+import _trimEnd from 'lodash/trimEnd'
+import { getFullDecimalMultiplier } from './getFullDecimalMultiplier'
+import { formatUnits } from './viem/formatUnits'
+import { BIG_ZERO } from './bigNumber'
 
 /**
  * Take a formatted amount, e.g. 15 BNB and convert it to full decimal value, e.g. 15000000000000000
  */
 export const getDecimalAmount = (amount: BigNumber, decimals = 18) => {
-  return new BigNumber(amount).times(getFullDecimalMultiplier(decimals))
+  return amount.times(getFullDecimalMultiplier(decimals))
 }
 
-export const getBalanceAmount = (amount: BigNumber, decimals = 18) => {
-  return new BigNumber(amount).dividedBy(getFullDecimalMultiplier(decimals))
+export const getBalanceAmount = (amount: BigNumber, decimals: number | undefined = 18) => {
+  return amount.dividedBy(getFullDecimalMultiplier(decimals))
 }
 
 /**
  * This function is not really necessary but is used throughout the site.
  */
-export const getBalanceNumber = (balance: BigNumber, decimals = 18) => {
-  return getBalanceAmount(balance, decimals).toNumber()
+export const getBalanceNumber = (balance: BigNumber | undefined, decimals = 18) => {
+  return getBalanceAmount(balance || BIG_ZERO, decimals).toNumber()
 }
 
 export const getFullDisplayBalance = (balance: BigNumber, decimals = 18, displayDecimals?: number): string => {
-  return getBalanceAmount(balance, decimals).toFixed(displayDecimals as number)
+  const stringNumber = getBalanceAmount(balance, decimals).toFixed(displayDecimals as number)
+
+  return displayDecimals ? _trimEnd(_trimEnd(stringNumber, '0'), '.') : stringNumber
 }
 
 /**
@@ -39,35 +42,23 @@ export const formatNumber = (number: number, minPrecision = 2, maxPrecision = 2)
   return number.toLocaleString(undefined, options)
 }
 
-/**
- * Method to format the display of wei given an EthersBigNumber object
- * Note: does NOT round
- */
-export const formatBigNumber = (number: EthersBigNumber, displayDecimals = 18, decimals = 18) => {
-  const remainder = number.mod(EthersBigNumber.from(10).pow(decimals - displayDecimals))
-  return formatUnits(number.sub(remainder), decimals)
+export const formatBigInt = (value: bigint, displayDecimals = 18, decimals = 18): string => {
+  const remainder = value % 10n ** BigInt(decimals - displayDecimals)
+
+  const formatted = formatUnits(value - remainder, decimals)
+  return formatted
 }
 
 /**
- * Method to format the display of wei given an EthersBigNumber object with toFixed
+ * Method to format the display of wei given an bigint object with toFixed
  * Note: rounds
  */
-export const formatBigNumberToFixed = (number: EthersBigNumber, displayDecimals = 18, decimals = 18) => {
+export const formatBigIntToFixed = (number: bigint, displayDecimals = 18, decimals = 18) => {
   const formattedString = formatUnits(number, decimals)
   return (+formattedString).toFixed(displayDecimals)
 }
 
-/**
- * Formats a FixedNumber like BigNumber
- * i.e. Formats 9763410526137450427.1196 into 9.763 (3 display decimals)
- */
-export const formatFixedNumber = (number: FixedNumber, displayDecimals = 18, decimals = 18) => {
-  // Remove decimal
-  const [leftSide] = number.toString().split('.')
-  return formatBigNumber(EthersBigNumber.from(leftSide), displayDecimals, decimals)
-}
-
-export const formatLocalisedCompactNumber = (number: number): string => {
+export const formatLocalisedCompactNumber = (number: number, isShort?: boolean): string => {
   const codeFromStorage = getLanguageCodeFromLS()
 
   const isClient = typeof window === 'object'
@@ -80,16 +71,16 @@ export const formatLocalisedCompactNumber = (number: number): string => {
 
   return new Intl.NumberFormat(codeFromStorage, {
     notation: 'compact',
-    compactDisplay: 'long',
+    compactDisplay: isShort ? 'short' : 'long',
     maximumSignificantDigits: 2,
   }).format(number)
 }
 
 export default formatLocalisedCompactNumber
 
-export const formatLpBalance = (balance: BigNumber) => {
-  const stakedBalanceBigNumber = getBalanceAmount(balance)
-  if (stakedBalanceBigNumber.gt(0) && stakedBalanceBigNumber.lt(0.00001)) {
+export const formatLpBalance = (balance: BigNumber, decimals: number) => {
+  const stakedBalanceBigNumber = getBalanceAmount(balance, decimals)
+  if (stakedBalanceBigNumber.lt(0.00001) && stakedBalanceBigNumber.gt(0)) {
     return '< 0.00001'
   }
   return stakedBalanceBigNumber.toFixed(5, BigNumber.ROUND_DOWN)

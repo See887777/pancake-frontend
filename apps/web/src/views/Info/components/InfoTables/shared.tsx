@@ -1,8 +1,11 @@
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { Text, Flex } from '@pancakeswap/uikit'
 
 export const ClickableColumnHeader = styled(Text)`
   cursor: pointer;
+  display: flex;
+  justify-content: start;
+  gap: 5px;
 `
 
 export const TableWrapper = styled(Flex)`
@@ -11,8 +14,12 @@ export const TableWrapper = styled(Flex)`
   flex-direction: column;
   gap: 16px;
   background-color: ${({ theme }) => theme.card.background};
-  border-radius: ${({ theme }) => theme.radii.card};
   border: 1px solid ${({ theme }) => theme.colors.cardBorder};
+  border-radius: ${({ theme }) => theme.radii.card};
+  ${({ theme }) => theme.mediaQueries.md} {
+    border-radius: ${({ theme }) => theme.radii.card};
+  }
+  overflow: hidden;
 `
 
 export const PageButtons = styled.div`
@@ -27,7 +34,7 @@ export const PageButtons = styled.div`
 export const Arrow = styled.div`
   color: ${({ theme }) => theme.colors.primary};
   padding: 0 20px;
-  :hover {
+  &:hover {
     cursor: pointer;
   }
 `

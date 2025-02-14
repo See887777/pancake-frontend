@@ -1,14 +1,14 @@
-import { useEffect } from 'react'
-import styled from 'styled-components'
-import { Heading, ModalContainer, ModalHeader, ModalTitle, ModalBody, ModalCloseButton } from '@pancakeswap/uikit'
-import { useAccount } from 'wagmi'
 import { useTranslation } from '@pancakeswap/localization'
-import delay from 'lodash/delay'
+import { Heading, ModalBody, ModalCloseButton, ModalContainer, ModalHeader, ModalTitle } from '@pancakeswap/uikit'
 import confetti from 'canvas-confetti'
 import { LotteryTicketClaimData } from 'config/constants/types'
+import delay from 'lodash/delay'
+import { useEffect } from 'react'
 import { useAppDispatch } from 'state'
-import { useLottery } from 'state/lottery/hooks'
 import { fetchUserLotteries } from 'state/lottery'
+import { useLottery } from 'state/lottery/hooks'
+import { styled } from 'styled-components'
+import { useAccount } from 'wagmi'
 import ClaimPrizesInner from './ClaimPrizesInner'
 
 const StyledModal = styled(ModalContainer)`
@@ -66,7 +66,7 @@ const ClaimPrizesModal: React.FC<React.PropsWithChildren<ClaimPrizesModalModalPr
   }, [])
 
   return (
-    <StyledModal $minWidth="280px">
+    <StyledModal minWidth="280px">
       <BunnyDecoration>
         <img src="/images/decorations/prize-bunny.png" alt="bunny decoration" height="124px" width="168px" />
       </BunnyDecoration>
@@ -79,7 +79,7 @@ const ClaimPrizesModal: React.FC<React.PropsWithChildren<ClaimPrizesModalModalPr
       <ModalBody p="24px">
         <ClaimPrizesInner
           onSuccess={() => {
-            dispatch(fetchUserLotteries({ account, currentLotteryId }))
+            if (account) dispatch(fetchUserLotteries({ account, currentLotteryId }))
             onDismiss?.()
           }}
           roundsToClaim={roundsToClaim}

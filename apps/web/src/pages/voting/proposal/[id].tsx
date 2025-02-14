@@ -1,20 +1,13 @@
 // eslint-disable-next-line camelcase
-import { SWRConfig, unstable_serialize } from 'swr'
+import { QueryClient, dehydrate } from '@tanstack/react-query'
 import { GetStaticPaths, GetStaticProps, InferGetStaticPropsType } from 'next'
-import { getProposal } from 'state/voting/helpers'
+import { NextSeo } from 'next-seo'
 import { ProposalState } from 'state/types'
+import { getProposal } from 'state/voting/helpers'
 import Overview from 'views/Voting/Proposal/Overview'
 
-const ProposalPage = ({ fallback = {} }: InferGetStaticPropsType<typeof getStaticProps>) => {
-  return (
-    <SWRConfig
-      value={{
-        fallback,
-      }}
-    >
-      <Overview />
-    </SWRConfig>
-  )
+const ProposalPage = () => {
+  return <Overview />
 }
 
 export const getStaticPaths: GetStaticPaths = () => {
@@ -24,8 +17,26 @@ export const getStaticPaths: GetStaticPaths = () => {
   }
 }
 
-export const getStaticProps: GetStaticProps = async ({ params }) => {
-  const { id } = params
+ProposalPage.Meta = (props: InferGetStaticPropsType<typeof getStaticProps>) => {
+  if (props.id && props.dehydratedState?.queries?.[0]?.state?.data) {
+    // @ts-ignore
+    const title = props.dehydratedState?.queries?.[0]?.state?.data?.ttile
+    if (title) {
+      return (
+        <NextSeo
+          openGraph={{
+            description: title,
+          }}
+        />
+      )
+    }
+  }
+  return null
+}
+
+export const getStaticProps = (async ({ params }) => {
+  const queryClient = new QueryClient()
+  const id = params?.id
   if (typeof id !== 'string') {
     return {
       notFound: true,
@@ -33,8 +44,11 @@ export const getStaticProps: GetStaticProps = async ({ params }) => {
   }
 
   try {
-    const fetchedProposal = await getProposal(id)
-    if (!fetchedProposal) {
+    const fetchedProposal = await queryClient.fetchQuery({
+      queryKey: ['voting', 'proposal', id],
+      queryFn: () => getProposal(id),
+    })
+    if (!fetchedProposal || fetchedProposal.space.id !== 'cakevote.eth') {
       return {
         notFound: true,
         revalidate: 1,
@@ -42,9 +56,8 @@ export const getStaticProps: GetStaticProps = async ({ params }) => {
     }
     return {
       props: {
-        fallback: {
-          [unstable_serialize(['proposal', id])]: fetchedProposal,
-        },
+        dehydratedState: dehydrate(queryClient),
+        id,
       },
       revalidate:
         fetchedProposal.state === ProposalState.CLOSED
@@ -54,11 +67,12 @@ export const getStaticProps: GetStaticProps = async ({ params }) => {
   } catch (error) {
     return {
       props: {
-        fallback: {},
+        dehydratedState: dehydrate(queryClient),
+        id,
       },
       revalidate: 60,
     }
   }
-}
+}) satisfies GetStaticProps
 
 export default ProposalPage

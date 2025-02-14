@@ -1,10 +1,10 @@
 import React from 'react'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { useTranslation } from '@pancakeswap/localization'
-import { Flex, Text, HelpIcon, useTooltip } from '@pancakeswap/uikit'
-import BaseCell, { CellContent } from 'views/Pools/components/PoolsTable/Cells/BaseCell'
+import { Flex, Text, HelpIcon, useTooltip, Link } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
 
-const StyledCell = styled(BaseCell)`
+const StyledCell = styled(Pool.BaseCell)`
   display: none;
   flex: 1 0 100px;
   ${({ theme }) => theme.mediaQueries.md} {
@@ -20,7 +20,7 @@ const MultiplierWrapper = styled.div`
   color: ${({ theme }) => theme.colors.text};
   width: 36px;
   text-align: right;
-  margin-right: 14px;
+  margin-right: 4px;
 
   ${({ theme }) => theme.mediaQueries.lg} {
     text-align: left;
@@ -45,7 +45,19 @@ const Multiplier: React.FC<React.PropsWithChildren<MultiplierProps>> = ({ multip
       <Text my="24px">
         {t('For example, if a 1x farm received 1 CAKE per block, a 40x farm would receive 40 CAKE per block.')}
       </Text>
-      <Text>{t('This amount is already included in all APR calculations for the farm.')}</Text>
+      <Text>
+        {t(
+          'We have recently rebased multipliers by a factor of 10, this is only a visual change and does not affect the amount of CAKE each farm receives.',
+        )}
+      </Text>
+      <Link
+        mt="8px"
+        display="inline"
+        href="https://medium.com/pancakeswap/farm-mutlipliers-visual-update-1f5f5f615afd"
+        external
+      >
+        {t('Read more')}
+      </Link>
     </>
   )
   const { targetRef, tooltip, tooltipVisible } = useTooltip(tooltipContent, {
@@ -55,7 +67,7 @@ const Multiplier: React.FC<React.PropsWithChildren<MultiplierProps>> = ({ multip
 
   return (
     <StyledCell role="cell">
-      <CellContent>
+      <Pool.CellContent>
         <Text fontSize="12px" color="textSubtle" textAlign="left">
           {t('Multiplier')}
         </Text>
@@ -66,7 +78,7 @@ const Multiplier: React.FC<React.PropsWithChildren<MultiplierProps>> = ({ multip
           </ReferenceElement>
           {tooltipVisible && tooltip}
         </Flex>
-      </CellContent>
+      </Pool.CellContent>
     </StyledCell>
   )
 }

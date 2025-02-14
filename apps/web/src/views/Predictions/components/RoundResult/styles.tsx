@@ -1,11 +1,12 @@
-import { useMemo } from 'react'
-import styled, { DefaultTheme } from 'styled-components'
-import { BigNumber } from '@ethersproject/bignumber'
-import { Box, Flex, FlexProps, Skeleton, Text } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import { BetPosition, NodeRound, Round } from 'state/types'
+import { BetPosition } from '@pancakeswap/prediction'
+import { Box, Flex, FlexProps, Skeleton, Text } from '@pancakeswap/uikit'
+import { formatBigInt } from '@pancakeswap/utils/formatBalance'
+import { useMemo } from 'react'
+import { NodeRound, Round } from 'state/types'
+import { DefaultTheme, styled } from 'styled-components'
 import { useConfig } from 'views/Predictions/context/ConfigProvider'
-import { formatUsdv2, formatBnbv2, getRoundPosition, getPriceDifference } from '../../helpers'
+import { formatTokenv2, getPriceDifference, getRoundPosition } from '../../helpers'
 import { formatBnb, formatUsd } from '../History/helpers'
 import PositionTag from '../PositionTag'
 
@@ -14,12 +15,16 @@ interface PrizePoolRowProps extends FlexProps {
   totalAmount: NodeRound['totalAmount']
 }
 
-const getPrizePoolAmount = (totalAmount: PrizePoolRowProps['totalAmount'], displayedDecimals: number) => {
-  if (!totalAmount) {
+const getPrizePoolAmount = (
+  totalAmount: PrizePoolRowProps['totalAmount'],
+  decimals: number,
+  displayedDecimals: number,
+) => {
+  if (typeof totalAmount !== 'bigint') {
     return '0'
   }
 
-  return formatBnbv2(totalAmount, displayedDecimals)
+  return formatTokenv2(totalAmount, decimals, displayedDecimals)
 }
 
 const Row = ({ children, ...props }) => {
@@ -32,12 +37,16 @@ const Row = ({ children, ...props }) => {
 
 export const PrizePoolRow: React.FC<React.PropsWithChildren<PrizePoolRowProps>> = ({ totalAmount, ...props }) => {
   const { t } = useTranslation()
-  const { token, displayedDecimals } = useConfig()
+  const config = useConfig()
 
   return (
     <Row {...props}>
       <Text bold>{t('Prize Pool')}:</Text>
-      <Text bold>{`${getPrizePoolAmount(totalAmount, displayedDecimals)} ${token.symbol}`}</Text>
+      <Text bold>{`${getPrizePoolAmount(
+        totalAmount,
+        config?.token?.decimals ?? 0,
+        config?.balanceDecimals ?? config?.displayedDecimals ?? 0,
+      )} ${config?.token?.symbol}`}</Text>
     </Row>
   )
 }
@@ -57,7 +66,7 @@ export const PayoutRow: React.FC<React.PropsWithChildren<PayoutRowProps>> = ({
 }) => {
   const { t } = useTranslation()
   const formattedMultiplier = `${multiplier.toLocaleString(undefined, { maximumFractionDigits: 2 })}x`
-  const { token, displayedDecimals } = useConfig()
+  const config = useConfig()
 
   return (
     <Row height="18px" {...props}>
@@ -69,24 +78,27 @@ export const PayoutRow: React.FC<React.PropsWithChildren<PayoutRowProps>> = ({
           {t('%multiplier% Payout', { multiplier: formattedMultiplier })}
         </Text>
         <Text mx="4px">|</Text>
-        <Text fontSize="12px" lineHeight="18px">{`${formatBnb(amount, displayedDecimals)} ${token.symbol}`}</Text>
+        <Text fontSize="12px" lineHeight="18px">{`${formatBnb(amount, config?.displayedDecimals ?? 0)} ${
+          config?.token?.symbol
+        }`}</Text>
       </Flex>
     </Row>
   )
 }
 
 interface LockPriceRowProps extends FlexProps {
-  lockPrice: NodeRound['lockPrice']
+  lockPrice: bigint
 }
 
 export const LockPriceRow: React.FC<React.PropsWithChildren<LockPriceRowProps>> = ({ lockPrice, ...props }) => {
   const { t } = useTranslation()
-  const { displayedDecimals, minPriceUsdDisplayed } = useConfig()
-
+  const config = useConfig()
   return (
     <Row {...props}>
       <Text fontSize="14px">{t('Locked Price')}:</Text>
-      <Text fontSize="14px">{formatUsdv2(lockPrice, minPriceUsdDisplayed, displayedDecimals)}</Text>
+      <Text fontSize="14px">
+        {formatUsd(Number(formatBigInt(lockPrice, 8, config?.lockPriceDecimals ?? 8)), config?.displayedDecimals ?? 0)}
+      </Text>
     </Row>
   )
 }
@@ -97,6 +109,8 @@ interface RoundResultBoxProps {
   isNext?: boolean
   isLive?: boolean
   hasEntered?: boolean
+
+  innerPadding?: string | null
 }
 
 const getBackgroundColor = ({
@@ -132,38 +146,43 @@ const Background = styled(Box)<RoundResultBoxProps>`
   padding: 2px;
 `
 
-const StyledRoundResultBox = styled.div`
+const StyledRoundResultBox = styled.div<{ $padding?: string }>`
   background: ${({ theme }) => theme.card.background};
   border-radius: 14px;
-  padding: 16px;
+  padding: ${({ $padding }) => $padding || '16px'};
 `
 
 export const RoundResultBox: React.FC<React.PropsWithChildren<RoundResultBoxProps>> = ({
   isNext = false,
   hasEntered = false,
   isLive = false,
+  innerPadding = '',
   children,
   ...props
 }) => {
   return (
     <Background isNext={isNext} hasEntered={hasEntered} isLive={isLive} {...props}>
-      <StyledRoundResultBox>{children}</StyledRoundResultBox>
+      <StyledRoundResultBox $padding={innerPadding || ''}>{children}</StyledRoundResultBox>
     </Background>
   )
 }
 
 interface RoundPriceProps {
-  lockPrice: BigNumber
-  closePrice: BigNumber
+  lockPrice: bigint | null
+  closePrice: bigint | null
+  AIPrice?: bigint | null
 }
 
-export const RoundPrice: React.FC<React.PropsWithChildren<RoundPriceProps>> = ({ lockPrice, closePrice }) => {
-  const { displayedDecimals, minPriceUsdDisplayed } = useConfig()
-  const betPosition = getRoundPosition(lockPrice, closePrice)
+export const RoundPrice: React.FC<React.PropsWithChildren<RoundPriceProps>> = ({ lockPrice, closePrice, AIPrice }) => {
+  const config = useConfig()
   const priceDifference = getPriceDifference(closePrice, lockPrice)
+  const betPosition = getRoundPosition(lockPrice, closePrice) // To show UP/DOWN only and not related to AI bet
+  const betPositionAI = getRoundPosition(lockPrice, closePrice, AIPrice) // In case of House win, display color according to AI won or lost
+
+  const finalBetPosition = AIPrice && betPosition === BetPosition.HOUSE ? betPositionAI : betPosition
 
   const textColor = useMemo(() => {
-    switch (betPosition) {
+    switch (finalBetPosition) {
       case BetPosition.BULL:
         return 'success'
       case BetPosition.BEAR:
@@ -172,20 +191,28 @@ export const RoundPrice: React.FC<React.PropsWithChildren<RoundPriceProps>> = ({
       default:
         return 'textDisabled'
     }
-  }, [betPosition])
+  }, [finalBetPosition])
 
   return (
     <Flex alignItems="center" justifyContent="space-between" mb="16px">
       {closePrice ? (
         <Text color={textColor} bold fontSize="24px">
-          {formatUsdv2(closePrice, minPriceUsdDisplayed, displayedDecimals)}
+          {formatUsd(
+            Number(formatBigInt(closePrice, 8, config?.closePriceDecimals ?? 8)),
+            config?.displayedDecimals ?? 0,
+          )}
         </Text>
       ) : (
         <Skeleton height="34px" my="1px" />
       )}
-      <PositionTag betPosition={betPosition}>
-        {formatUsdv2(priceDifference, minPriceUsdDisplayed, displayedDecimals)}
-      </PositionTag>
+      {finalBetPosition && (
+        <PositionTag betPosition={finalBetPosition}>
+          {formatUsd(
+            Number(formatBigInt(priceDifference, 8, config?.closePriceDecimals ?? 8)), // Ideally both closePriceDecimals and lockPriceDecimals should be same
+            config?.displayedDecimals ?? 0,
+          )}
+        </PositionTag>
+      )}
     </Flex>
   )
 }
@@ -212,12 +239,15 @@ export const PrizePoolHistoryRow: React.FC<React.PropsWithChildren<PrizePoolHist
   ...props
 }) => {
   const { t } = useTranslation()
-  const { token, displayedDecimals } = useConfig()
+  const config = useConfig()
 
   return (
     <Row {...props}>
       <Text bold>{t('Prize Pool')}:</Text>
-      <Text bold>{`${getPrizePoolAmountHistory(totalAmount, displayedDecimals)} ${token.symbol}`}</Text>
+      <Text bold>{`${getPrizePoolAmountHistory(
+        totalAmount,
+        config?.balanceDecimals ?? config?.displayedDecimals ?? 0,
+      )} ${config?.token?.symbol}`}</Text>
     </Row>
   )
 }
@@ -231,12 +261,12 @@ export const LockPriceHistoryRow: React.FC<React.PropsWithChildren<LockPriceHist
   ...props
 }) => {
   const { t } = useTranslation()
-  const { displayedDecimals } = useConfig()
+  const config = useConfig()
 
   return (
     <Row {...props}>
       <Text fontSize="14px">{t('Locked Price')}:</Text>
-      <Text fontSize="14px">{formatUsd(lockPrice, displayedDecimals)}</Text>
+      <Text fontSize="14px">{formatUsd(lockPrice, config?.displayedDecimals ?? 0)}</Text>
     </Row>
   )
 }

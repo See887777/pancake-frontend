@@ -1,21 +1,20 @@
 /* eslint-disable no-restricted-syntax */
 import { Currency, Token } from '@pancakeswap/aptos-swap-sdk'
-import { useDebounce } from '@pancakeswap/hooks'
+import { useDebounce, useSortedTokensByQuery } from '@pancakeswap/hooks'
 import { useTranslation } from '@pancakeswap/localization'
 import { AutoColumn, Box, Column, Input, Row, Text, useMatchBreakpoints } from '@pancakeswap/uikit'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
 import useNativeCurrency from 'hooks/useNativeCurrency'
 import { KeyboardEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { APTOS_COIN } from '@pancakeswap/awgmi'
-import { WrappedTokenInfo } from '@pancakeswap/token-lists'
+import { APTOS_COIN, isStructTag } from '@pancakeswap/awgmi'
+import { WrappedTokenInfo, createFilterToken } from '@pancakeswap/token-lists'
 import { FixedSizeList } from 'react-window'
 import { useAllLists, useInactiveListUrls } from 'state/lists/hooks'
-import { useAudioPlay } from 'state/user'
+import { useAudioPlay } from '@pancakeswap/utils/user/audioPlay'
 
+import { useActiveChainId } from 'hooks/useNetwork'
 import { useAllTokens, useIsUserAddedToken, useToken } from '../../hooks/Tokens'
 import CommonBases from './CommonBases'
 import CurrencyList from './CurrencyList'
-import { createFilterToken, useSortedTokensByQuery } from './filtering'
 import ImportRow from './ImportRow'
 import useTokenComparator from './sorting'
 import { getSwapSound } from './swapSound'
@@ -34,11 +33,11 @@ interface CurrencySearchProps {
 function useSearchInactiveTokenLists(search: string | undefined, minResults = 10): WrappedTokenInfo[] {
   const lists = useAllLists()
   const inactiveUrls = useInactiveListUrls()
-  const { chainId } = useActiveWeb3React()
+  const chainId = useActiveChainId()
   const activeTokens = useAllTokens()
   return useMemo(() => {
     if (!search || search.trim().length === 0) return []
-    const filterToken = createFilterToken(search)
+    const filterToken = createFilterToken(search, (address) => isStructTag(address))
     const exactMatches: WrappedTokenInfo[] = []
     const rest: WrappedTokenInfo[] = []
     const addressSet: { [address: string]: true } = {}
@@ -49,6 +48,7 @@ function useSearchInactiveTokenLists(search: string | undefined, minResults = 10
       if (!list) continue
       for (const tokenInfo of list.tokens) {
         if (
+          tokenInfo.address !== APTOS_COIN &&
           tokenInfo.chainId === chainId &&
           !(tokenInfo.address in activeTokens) &&
           !addressSet[tokenInfo.address] &&
@@ -82,7 +82,7 @@ function CurrencySearch({
   height,
 }: CurrencySearchProps) {
   const { t } = useTranslation()
-  const { chainId } = useActiveWeb3React()
+  const chainId = useActiveChainId()
 
   // refs for fixed size lists
   const fixedList = useRef<FixedSizeList>()
@@ -109,10 +109,10 @@ function CurrencySearch({
   }, [debouncedQuery, native])
 
   const filteredTokens: Token[] = useMemo(() => {
-    const filterToken = createFilterToken(debouncedQuery)
+    const filterToken = createFilterToken(debouncedQuery, (address) => isStructTag(address))
     return Object.values(allTokens)
-      .filter(filterToken)
       .filter((token) => token.address !== APTOS_COIN)
+      .filter(filterToken)
   }, [allTokens, debouncedQuery])
 
   const filteredQueryTokens = useSortedTokensByQuery(filteredTokens, debouncedQuery)
@@ -176,7 +176,12 @@ function CurrencySearch({
     if (searchToken && !searchTokenIsAdded && !hasFilteredInactiveTokens) {
       return (
         <Column style={{ padding: '20px 0', height: '100%' }}>
-          <ImportRow token={searchToken} showImportView={showImportView} setImportToken={setImportToken} />
+          <ImportRow
+            onCurrencySelect={handleCurrencySelect}
+            token={searchToken}
+            showImportView={showImportView}
+            setImportToken={setImportToken}
+          />
         </Column>
       )
     }
@@ -189,7 +194,9 @@ function CurrencySearch({
           currencies={filteredSortedTokens}
           inactiveCurrencies={filteredInactiveTokens}
           breakIndex={
-            Boolean(filteredInactiveTokens?.length) && filteredSortedTokens ? filteredSortedTokens.length : undefined
+            hasFilteredInactiveTokens && filteredSortedTokens
+              ? filteredSortedTokens.length + (showNative ? 1 : 0)
+              : undefined
           }
           onCurrencySelect={handleCurrencySelect}
           otherCurrency={otherSelectedCurrency}

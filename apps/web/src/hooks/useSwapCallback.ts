@@ -1,20 +1,20 @@
-import { BigNumber } from '@ethersproject/bignumber'
-import { Contract } from '@ethersproject/contracts'
-import { SwapParameters, Trade, Currency, TradeType } from '@pancakeswap/sdk'
 import { useTranslation } from '@pancakeswap/localization'
+import { SwapParameters, TradeType } from '@pancakeswap/sdk'
 import isZero from '@pancakeswap/utils/isZero'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
+import truncateHash from '@pancakeswap/utils/truncateHash'
+import { V2TradeAndStableSwap, isStableSwap } from 'config/constants/types'
 import { useMemo } from 'react'
 import { useGasPrice } from 'state/user/hooks'
-import truncateHash from '@pancakeswap/utils/truncateHash'
-import { StableTrade } from 'views/Swap/StableSwap/hooks/useStableTradeExactIn'
 import { logSwap, logTx } from 'utils/log'
+import { isUserRejected } from 'utils/sentry'
+import { Hash, isAddress } from 'viem'
 
-import { INITIAL_ALLOWED_SLIPPAGE } from '../config/constants'
-import { useTransactionAdder } from '../state/transactions/hooks'
-import { calculateGasMargin, isAddress } from '../utils'
-import { transactionErrorToUserReadableMessage } from '../utils/transactionErrorToUserReadableMessage'
-import { basisPointsToPercent } from '../utils/exchange'
+import { INITIAL_ALLOWED_SLIPPAGE } from 'config/constants'
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
+import { useTransactionAdder } from 'state/transactions/hooks'
+import { calculateGasMargin } from 'utils'
+import { basisPointsToPercent } from 'utils/exchange'
+import { transactionErrorToUserReadableMessage } from 'utils/transactionErrorToUserReadableMessage'
 
 export enum SwapCallbackState {
   INVALID,
@@ -23,12 +23,12 @@ export enum SwapCallbackState {
 }
 
 interface SwapCall {
-  contract: Contract
+  contract: any
   parameters: SwapParameters
 }
 
 interface SuccessfulCall extends SwapCallEstimate {
-  gasEstimate: BigNumber
+  gasEstimate: bigint
 }
 
 interface FailedCall extends SwapCallEstimate {
@@ -39,17 +39,16 @@ interface SwapCallEstimate {
   call: SwapCall
 }
 
-type ITrade = Trade<Currency, Currency, TradeType> | StableTrade | undefined
-
+// TODO: wagmi should remove?
 // returns a function that will execute a swap, if the parameters are all valid
 // and the user has approved the slippage adjusted input amount for the trade
 export function useSwapCallback(
-  trade: ITrade, // trade to execute, required
+  trade: V2TradeAndStableSwap | null, // trade to execute, required
   allowedSlippage: number = INITIAL_ALLOWED_SLIPPAGE, // in bips
   recipientAddress: string | null, // the address of the recipient of the trade, or null if swap should be returned to sender
   swapCalls: SwapCall[],
 ): { state: SwapCallbackState; callback: null | (() => Promise<string>); error: string | null } {
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const gasPrice = useGasPrice()
 
   const { t } = useTranslation()
@@ -80,7 +79,7 @@ export function useSwapCallback(
             } = call
             const options = !value || isZero(value) ? {} : { value }
 
-            return contract.estimateGas[methodName](...args, options)
+            return contract.estimateGas[methodName](args, options)
               .then((gasEstimate) => {
                 return {
                   call,
@@ -90,7 +89,7 @@ export function useSwapCallback(
               .catch((gasError) => {
                 console.error('Gas estimate failed, trying eth_call to extract error', call)
 
-                return contract.callStatic[methodName](...args, options)
+                return contract.callStatic[methodName](args, options)
                   .then((result) => {
                     console.error('Unexpected successful call after failed estimate gas', call, gasError, result)
                     return { call, error: t('Unexpected issue with estimating the gas. Please try again.') }
@@ -124,12 +123,12 @@ export function useSwapCallback(
           gasEstimate,
         } = successfulEstimation
 
-        return contract[methodName](...args, {
-          gasLimit: calculateGasMargin(gasEstimate),
+        return contract.write[methodName](args, {
+          gas: calculateGasMargin(gasEstimate),
           gasPrice,
-          ...(value && !isZero(value) ? { value, from: account } : { from: account }),
+          ...(value && !isZero(value) ? { value, account } : { account }),
         })
-          .then((response: any) => {
+          .then((response: Hash) => {
             const inputSymbol = trade.inputAmount.currency.symbol
             const outputSymbol = trade.outputAmount.currency.symbol
             const pct = basisPointsToPercent(allowedSlippage)
@@ -137,6 +136,7 @@ export function useSwapCallback(
               trade.tradeType === TradeType.EXACT_INPUT
                 ? trade.inputAmount.toSignificant(3)
                 : trade.maximumAmountIn(pct).toSignificant(3)
+
             const outputAmount =
               trade.tradeType === TradeType.EXACT_OUTPUT
                 ? trade.outputAmount.toSignificant(3)
@@ -162,34 +162,41 @@ export function useSwapCallback(
                 ? 'Swap %inputAmount% %inputSymbol% for min. %outputAmount% %outputSymbol%'
                 : 'Swap %inputAmount% %inputSymbol% for min. %outputAmount% %outputSymbol% to %recipientAddress%'
 
-            addTransaction(response, {
-              summary: withRecipient,
-              translatableSummary: {
-                text: translatableWithRecipient,
-                data: {
-                  inputAmount,
-                  inputSymbol,
-                  outputAmount,
-                  outputSymbol,
-                  ...(recipient !== account && { recipientAddress: recipientAddressText }),
+            addTransaction(
+              { hash: response },
+              {
+                summary: withRecipient,
+                translatableSummary: {
+                  text: translatableWithRecipient,
+                  data: {
+                    inputAmount,
+                    inputSymbol,
+                    outputAmount,
+                    outputSymbol,
+                    ...(recipient !== account && recipientAddressText && { recipientAddress: recipientAddressText }),
+                  },
                 },
+                type: 'swap',
               },
-              type: 'swap',
-            })
+            )
             logSwap({
+              tradeType: trade.tradeType,
+              account,
+              hash: response,
               chainId,
               inputAmount,
               outputAmount,
               input: trade.inputAmount.currency,
               output: trade.outputAmount.currency,
+              type: isStableSwap(trade) ? 'StableSwap' : 'V2Swap',
             })
-            logTx({ account, chainId, hash: response.hash })
+            logTx({ account, chainId, hash: response })
 
-            return response.hash
+            return response
           })
           .catch((error: any) => {
             // if the user rejected the tx, pass this along
-            if (error?.code === 4001) {
+            if (isUserRejected(error)) {
               throw new Error('Transaction rejected.')
             } else {
               // otherwise, the error was unexpected and we need to convey that

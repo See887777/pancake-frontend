@@ -1,27 +1,29 @@
 import {
-  Button,
-  Flex,
   Box,
-  Modal,
-  Text,
+  BscScanIcon,
+  Button,
   ChevronRightIcon,
+  Flex,
   InjectedModalProps,
+  Modal,
   Tag,
-  Spinner,
+  Text,
   useMatchBreakpoints,
 } from '@pancakeswap/uikit'
+import { ConfirmationPendingContent, TransactionErrorContent } from '@pancakeswap/widgets-internal'
+
+import { Order } from '@gelatonetwork/limit-orders-lib'
 import { useTranslation } from '@pancakeswap/localization'
+import { TransactionSubmittedContent } from 'components/TransactionConfirmationModal'
+import useGelatoLimitOrdersHandlers from 'hooks/limitOrders/useGelatoLimitOrdersHandlers'
+import { useActiveChainId } from 'hooks/useActiveChainId'
 import useTheme from 'hooks/useTheme'
 import { memo, useCallback, useState } from 'react'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { FormattedOrderData } from 'views/LimitOrders/hooks/useFormattedOrderData'
-import useGelatoLimitOrdersHandlers from 'hooks/limitOrders/useGelatoLimitOrdersHandlers'
-import { Order } from '@gelatonetwork/limit-orders-lib'
-import { TransactionErrorContent, TransactionSubmittedContent } from 'components/TransactionConfirmationModal'
-import { useActiveChainId } from 'hooks/useActiveChainId'
-import CurrencyFormat from './CurrencyFormat'
-import CellFormat from './CellFormat'
 import LimitOrderDisclaimer from '../LimitOrderDisclaimer'
+import CellFormat from './CellFormat'
+import CurrencyFormat from './CurrencyFormat'
 
 const InfoCardWrapper = styled.div`
   border-radius: 16px;
@@ -107,7 +109,8 @@ export const DetailLimitOrderModal: React.FC<React.PropsWithChildren<DetailLimit
   const limitPriceExchangeRateText = `1 ${formattedOrder.inputToken?.symbol} = ${formattedOrder.executionPrice} ${formattedOrder.outputToken?.symbol}`
   const limitPriceExchangeRateTextReversed = `1 ${formattedOrder.outputToken?.symbol} = ${formattedOrder.invertedExecutionPrice} ${formattedOrder.inputToken?.symbol}`
 
-  const { isOpen, isExecuted, isCancelled, isSubmissionPending, isCancellationPending, bscScanUrls } = formattedOrder
+  const { isOpen, isExecuted, isExpired, isCancelled, isSubmissionPending, isCancellationPending, bscScanUrls } =
+    formattedOrder
 
   const orderDetails = (
     <>
@@ -123,42 +126,47 @@ export const DetailLimitOrderModal: React.FC<React.PropsWithChildren<DetailLimit
         />
       </Flex>
       <LimitTradeInfoCard
-        currentPriceExchangeRateText="0.002474 BNB = 1 BUSD"
-        currentPriceExchangeRateTextReversed="404.11169 BUSD = 1 BNB"
         limitPriceExchangeRateText={limitPriceExchangeRateText}
         limitPriceExchangeRateTextReversed={limitPriceExchangeRateTextReversed}
         isOpen={isOpen}
         isExecuted={isExecuted}
+        isExpired={isExpired}
         isCancelled={isCancelled}
         isSubmissionPending={isSubmissionPending}
         isCancellationPending={isCancellationPending}
       />
       <LimitOrderDisclaimer />
       <Flex flexDirection="column">
-        {isOpen ? (
-          <>
-            <Button variant="primary" mt="16px" as="a" external href={formattedOrder.bscScanUrls.created}>
-              {t('View on BscScan')}
-            </Button>
-            {!isSubmissionPending && (
-              <Button variant="danger" mt="16px" onClick={onCancelOrder}>
-                {t('Cancel Order')}
+        {formattedOrder.bscScanUrls.created ? (
+          isOpen || isExpired ? (
+            <>
+              <Button variant="primary" mt="16px" as="a" external href={formattedOrder.bscScanUrls.created}>
+                {t('View on BscScan')}
+                <BscScanIcon color="invertedContrast" ml="4px" />
               </Button>
-            )}
-          </>
-        ) : (
-          <Button variant="primary" mt="16px" as="a" external href={formattedOrder.bscScanUrls.created}>
-            {t('View order creation on BSCScan')}
-          </Button>
-        )}
+              {!isSubmissionPending && (
+                <Button variant="danger" mt="16px" onClick={onCancelOrder}>
+                  {t('Cancel Order')}
+                </Button>
+              )}
+            </>
+          ) : (
+            <Button variant="primary" mt="16px" as="a" external href={formattedOrder.bscScanUrls.created}>
+              {t('View order creation on BSCScan')}
+              <BscScanIcon color="invertedContrast" ml="4px" />
+            </Button>
+          )
+        ) : null}
         {isCancelled && bscScanUrls.cancelled && (
           <Button variant="primary" mt="16px" as="a" external href={bscScanUrls.cancelled}>
             {t('View order cancellation on BSCScan')}
+            <BscScanIcon color="invertedContrast" ml="4px" />
           </Button>
         )}
         {isExecuted && bscScanUrls.executed && (
           <Button variant="primary" mt="16px" as="a" external href={bscScanUrls.executed}>
             {t('View order execution on BSCScan')}
+            <BscScanIcon color="invertedContrast" ml="4px" />
           </Button>
         )}
       </Flex>
@@ -172,7 +180,7 @@ export const DetailLimitOrderModal: React.FC<React.PropsWithChildren<DetailLimit
       onDismiss={onDismiss}
     >
       {attemptingTxn ? (
-        <LoadingContent />
+        <ConfirmationPendingContent />
       ) : txHash ? (
         <TransactionSubmittedContent chainId={chainId} hash={txHash} onDismiss={onDismiss} />
       ) : cancellationErrorMessage ? (
@@ -185,12 +193,11 @@ export const DetailLimitOrderModal: React.FC<React.PropsWithChildren<DetailLimit
 }
 
 interface LimitTradeInfoCardProps {
-  currentPriceExchangeRateText: string
-  currentPriceExchangeRateTextReversed: string
   limitPriceExchangeRateText: string
   limitPriceExchangeRateTextReversed: string
   isOpen: boolean
   isExecuted: boolean
+  isExpired: boolean
   isCancelled: boolean
   isSubmissionPending: boolean
   isCancellationPending: boolean
@@ -202,6 +209,7 @@ const LimitTradeInfoCard: React.FC<React.PropsWithChildren<LimitTradeInfoCardPro
     limitPriceExchangeRateTextReversed,
     isOpen,
     isExecuted,
+    isExpired,
     isCancelled,
     isSubmissionPending,
     isCancellationPending,
@@ -214,6 +222,11 @@ const LimitTradeInfoCard: React.FC<React.PropsWithChildren<LimitTradeInfoCardPro
           {isOpen && isSubmissionPending && (
             <Tag outline scale="sm" p="8px" mb="16px" variant="warning">
               {t('Pending')}
+            </Tag>
+          )}
+          {isExpired && (
+            <Tag outline scale="sm" p="8px" mb="16px" variant="warning">
+              {t('Expired')}
             </Tag>
           )}
           {isExecuted && (
@@ -243,22 +256,3 @@ const LimitTradeInfoCard: React.FC<React.PropsWithChildren<LimitTradeInfoCardPro
     )
   },
 )
-
-const LoadingContent: React.FC<React.PropsWithChildren> = memo(() => {
-  const { t } = useTranslation()
-  return (
-    <Flex>
-      <Flex flexDirection="column" flexGrow="wrap" flexBasis="267px">
-        <Text fontSize="20px" small color="secondary">
-          {t('Confirm')}
-        </Text>
-        <Text small color="textSubtle" mt="8px">
-          {t('Please confirm the transaction in your wallet')}
-        </Text>
-      </Flex>
-      <Flex>
-        <Spinner size={70} />
-      </Flex>
-    </Flex>
-  )
-})

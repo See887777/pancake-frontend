@@ -1,10 +1,10 @@
-import styled from 'styled-components'
-import ApyButton from 'views/Farms/components/FarmCard/ApyButton'
+import { Skeleton } from '@pancakeswap/uikit'
 import BigNumber from 'bignumber.js'
 import { BASE_ADD_LIQUIDITY_URL } from 'config'
-import getLiquidityUrlPathParts from 'utils/getLiquidityUrlPathParts'
-import { Skeleton } from '@pancakeswap/uikit'
 import { useActiveChainId } from 'hooks/useActiveChainId'
+import { styled } from 'styled-components'
+import getLiquidityUrlPathParts from 'utils/getLiquidityUrlPathParts'
+import ApyButton from 'views/Farms/components/FarmCard/ApyButton'
 
 export interface AprProps {
   value: string
@@ -22,6 +22,12 @@ export interface AprProps {
   strikethrough?: boolean
   useTooltipText?: boolean
   boosted?: boolean
+  stableSwapAddress?: string
+  stableLpFee?: number
+  farmCakePerSecond?: string
+  totalMultipliers?: string
+  boosterMultiplier?: number
+  isBooster?: boolean
 }
 
 const Container = styled.div`
@@ -58,17 +64,21 @@ const Apr: React.FC<React.PropsWithChildren<AprProps>> = ({
   cakePrice,
   originalValue,
   hideButton = false,
-  strikethrough,
   lpRewardsApr,
   useTooltipText = true,
-  boosted,
+  stableSwapAddress,
+  stableLpFee,
+  farmCakePerSecond,
+  totalMultipliers,
+  isBooster,
+  boosterMultiplier,
 }) => {
   const { chainId } = useActiveChainId()
   const liquidityUrlPathParts = getLiquidityUrlPathParts({ quoteTokenAddress, tokenAddress, chainId })
   const addLiquidityUrl = `${BASE_ADD_LIQUIDITY_URL}/${liquidityUrlPathParts}`
-  return originalValue !== 0 ? (
+  return originalValue !== 0 || lpRewardsApr !== 0 ? (
     <Container>
-      {originalValue ? (
+      {originalValue || lpRewardsApr !== 0 ? (
         <ApyButton
           variant={hideButton ? 'text' : 'text-and-button'}
           pid={pid}
@@ -81,10 +91,14 @@ const Apr: React.FC<React.PropsWithChildren<AprProps>> = ({
           displayApr={value}
           lpRewardsApr={lpRewardsApr}
           addLiquidityUrl={addLiquidityUrl}
-          strikethrough={strikethrough}
           useTooltipText={useTooltipText}
           hideButton={hideButton}
-          boosted={boosted}
+          stableSwapAddress={stableSwapAddress}
+          stableLpFee={stableLpFee}
+          farmCakePerSecond={farmCakePerSecond}
+          totalMultipliers={totalMultipliers}
+          isBooster={isBooster}
+          boosterMultiplier={boosterMultiplier}
         />
       ) : (
         <AprWrapper>

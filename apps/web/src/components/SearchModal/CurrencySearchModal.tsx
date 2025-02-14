@@ -1,26 +1,34 @@
-import { useCallback, useState, useRef, useEffect } from 'react'
+import { usePreviousValue } from '@pancakeswap/hooks'
+import { useTranslation } from '@pancakeswap/localization'
 import { Currency, Token } from '@pancakeswap/sdk'
+import { TokenList, WrappedTokenInfo } from '@pancakeswap/token-lists'
+import { enableList, removeList, useFetchListCallback } from '@pancakeswap/token-lists/react'
 import {
+  Button,
+  CopyButton,
+  FlexGap,
+  Heading,
+  InjectedModalProps,
+  MODAL_SWIPE_TO_CLOSE_VELOCITY,
+  ModalBackButton,
+  ModalBody,
+  ModalCloseButton,
   ModalContainer,
   ModalHeader,
   ModalTitle,
-  ModalBackButton,
-  ModalCloseButton,
-  ModalBody,
-  InjectedModalProps,
-  Heading,
-  Button,
+  Text,
   useMatchBreakpoints,
-  MODAL_SWIPE_TO_CLOSE_VELOCITY,
 } from '@pancakeswap/uikit'
-import styled from 'styled-components'
-import { usePreviousValue } from '@pancakeswap/hooks'
-import { TokenList } from '@pancakeswap/token-lists'
-import { useTranslation } from '@pancakeswap/localization'
+import { CurrencyLogo, ImportList } from '@pancakeswap/widgets-internal'
+import AddToWalletButton from 'components/AddToWallet/AddToWalletButton'
+import { ViewOnExplorerButton } from 'components/ViewOnExplorerButton'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAllLists } from 'state/lists/hooks'
+import { useListState } from 'state/lists/lists'
+import { styled } from 'styled-components'
 import CurrencySearch from './CurrencySearch'
 import ImportToken from './ImportToken'
 import Manage from './Manage'
-import ImportList from './ImportList'
 import { CurrencyModalView } from './types'
 
 const Footer = styled.div`
@@ -38,8 +46,12 @@ const StyledModalContainer = styled(ModalContainer)`
   }
 `
 
+const StyledModalHeader = styled(ModalHeader)`
+  border: none;
+`
+
 const StyledModalBody = styled(ModalBody)`
-  padding: 24px;
+  padding: 4px 24px 24px;
   overflow-y: auto;
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -50,10 +62,13 @@ const StyledModalBody = styled(ModalBody)`
 
 export interface CurrencySearchModalProps extends InjectedModalProps {
   selectedCurrency?: Currency | null
-  onCurrencySelect: (currency: Currency) => void
+  onCurrencySelect?: (currency: Currency) => void
   otherSelectedCurrency?: Currency | null
   showCommonBases?: boolean
   commonBasesType?: string
+  showSearchInput?: boolean
+  tokensToShow?: Token[]
+  showCurrencyInHeader?: boolean
 }
 
 export default function CurrencySearchModal({
@@ -63,13 +78,16 @@ export default function CurrencySearchModal({
   otherSelectedCurrency,
   showCommonBases = true,
   commonBasesType,
+  showSearchInput,
+  tokensToShow,
+  showCurrencyInHeader = false,
 }: CurrencySearchModalProps) {
   const [modalView, setModalView] = useState<CurrencyModalView>(CurrencyModalView.search)
 
   const handleCurrencySelect = useCallback(
     (currency: Currency) => {
       onDismiss?.()
-      onCurrencySelect(currency)
+      onCurrencySelect?.(currency)
     },
     [onDismiss, onCurrencySelect],
   )
@@ -86,6 +104,28 @@ export default function CurrencySearchModal({
 
   const { t } = useTranslation()
 
+  const [, dispatch] = useListState()
+  const lists = useAllLists()
+  const adding = Boolean(listURL && lists[listURL]?.loadingRequestId)
+
+  const fetchList = useFetchListCallback(dispatch)
+
+  const [addError, setAddError] = useState<string | null>(null)
+
+  const handleAddList = useCallback(() => {
+    if (adding || !listURL) return
+    setAddError(null)
+    fetchList(listURL)
+      .then(() => {
+        dispatch(enableList(listURL))
+        setModalView(CurrencyModalView.manage)
+      })
+      .catch((error) => {
+        setAddError(error.message)
+        dispatch(removeList(listURL))
+      })
+  }, [adding, dispatch, fetchList, listURL])
+
   const config = {
     [CurrencyModalView.search]: { title: t('Select a Token'), onBack: undefined },
     [CurrencyModalView.manage]: { title: t('Manage'), onBack: () => setModalView(CurrencyModalView.search) },
@@ -98,7 +138,8 @@ export default function CurrencySearchModal({
   }
   const { isMobile } = useMatchBreakpoints()
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const [height, setHeight] = useState(undefined)
+  const [height, setHeight] = useState<number | undefined>(undefined)
+
   useEffect(() => {
     if (!wrapperRef.current) return
     setHeight(wrapperRef.current.offsetHeight - 330)
@@ -119,13 +160,62 @@ export default function CurrencySearchModal({
       }}
       ref={wrapperRef}
     >
-      <ModalHeader>
+      <StyledModalHeader>
         <ModalTitle>
           {config[modalView].onBack && <ModalBackButton onBack={config[modalView].onBack} />}
-          <Heading>{config[modalView].title}</Heading>
+
+          {showCurrencyInHeader && selectedCurrency ? (
+            <>
+              <CurrencyLogo currency={selectedCurrency} style={{ borderRadius: '50%' }} />
+              <Text p="2px 6px" bold>
+                {selectedCurrency.symbol}
+              </Text>
+              {!selectedCurrency.isNative && (
+                <FlexGap ml={isMobile ? '8px' : '4px'} alignItems="center">
+                  <CopyButton
+                    data-dd-action-name="Copy token address"
+                    width="16px"
+                    buttonColor="textSubtle"
+                    text={selectedCurrency.wrapped.address}
+                    tooltipMessage={t('Token address copied')}
+                    defaultTooltipMessage={t('Copy token address')}
+                    tooltipPlacement="top"
+                  />
+                  <ViewOnExplorerButton
+                    address={selectedCurrency.wrapped.address}
+                    chainId={selectedCurrency.chainId}
+                    type="token"
+                    color="textSubtle"
+                    width="18px"
+                    ml={isMobile ? '18px' : '12px'}
+                    tooltipPlacement="top"
+                  />
+                  <AddToWalletButton
+                    data-dd-action-name="Add to wallet"
+                    variant="text"
+                    p="0"
+                    ml={isMobile ? '21px' : '15px'}
+                    height="auto"
+                    width="fit-content"
+                    tokenAddress={selectedCurrency.wrapped.address}
+                    tokenSymbol={selectedCurrency.symbol}
+                    tokenDecimals={selectedCurrency.decimals}
+                    tokenLogo={
+                      selectedCurrency.wrapped instanceof WrappedTokenInfo
+                        ? selectedCurrency.wrapped.logoURI
+                        : undefined
+                    }
+                    tooltipPlacement="top"
+                  />
+                </FlexGap>
+              )}
+            </>
+          ) : (
+            <Heading>{config[modalView].title}</Heading>
+          )}
         </ModalTitle>
         <ModalCloseButton onDismiss={onDismiss} />
-      </ModalHeader>
+      </StyledModalHeader>
       <StyledModalBody>
         {modalView === CurrencyModalView.search ? (
           <CurrencySearch
@@ -134,14 +224,23 @@ export default function CurrencySearchModal({
             otherSelectedCurrency={otherSelectedCurrency}
             showCommonBases={showCommonBases}
             commonBasesType={commonBasesType}
+            showSearchInput={showSearchInput}
             showImportView={() => setModalView(CurrencyModalView.importToken)}
             setImportToken={setImportToken}
             height={height}
+            tokensToShow={tokensToShow}
           />
         ) : modalView === CurrencyModalView.importToken && importToken ? (
           <ImportToken tokens={[importToken]} handleCurrencySelect={handleCurrencySelect} />
         ) : modalView === CurrencyModalView.importList && importList && listURL ? (
-          <ImportList list={importList} listURL={listURL} onImport={() => setModalView(CurrencyModalView.manage)} />
+          <ImportList
+            onAddList={handleAddList}
+            addError={addError}
+            listURL={listURL}
+            listLogoURI={importList?.logoURI}
+            listName={importList?.name}
+            listTokenLength={importList?.tokens.length}
+          />
         ) : modalView === CurrencyModalView.manage ? (
           <Manage
             setModalView={setModalView}

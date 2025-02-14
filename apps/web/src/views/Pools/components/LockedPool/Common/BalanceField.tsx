@@ -2,7 +2,7 @@ import { BalanceInput, Button, Flex, Image, Slider, Text } from '@pancakeswap/ui
 import BigNumber from 'bignumber.js'
 import { useTranslation } from '@pancakeswap/localization'
 import { Dispatch, useMemo, memo, SetStateAction, useCallback } from 'react'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { getFullDisplayBalance } from '@pancakeswap/utils/formatBalance'
 import { getFullDecimalMultiplier } from '@pancakeswap/utils/getFullDecimalMultiplier'
 import { useUserEnoughCakeValidator } from '../hooks/useUserEnoughCakeValidator'
@@ -18,8 +18,9 @@ interface PropsType {
   lockedAmount: string
   stakingMax: BigNumber
   setLockedAmount: Dispatch<SetStateAction<string>>
-  usedValueStaked: number | undefined
+  usdValueStaked: number | undefined
   stakingTokenBalance: BigNumber
+  needApprove: boolean
 }
 
 const BalanceField: React.FC<React.PropsWithChildren<PropsType>> = ({
@@ -29,8 +30,9 @@ const BalanceField: React.FC<React.PropsWithChildren<PropsType>> = ({
   lockedAmount,
   stakingMax,
   setLockedAmount,
-  usedValueStaked,
+  usdValueStaked,
   stakingTokenBalance,
+  needApprove,
 }) => {
   const { t } = useTranslation()
   const { userNotEnoughCake, notEnoughErrorMessage } = useUserEnoughCakeValidator(lockedAmount, stakingTokenBalance)
@@ -80,12 +82,17 @@ const BalanceField: React.FC<React.PropsWithChildren<PropsType>> = ({
         </Flex>
       </Flex>
       <BalanceInput
-        isWarning={userNotEnoughCake}
+        isWarning={userNotEnoughCake || needApprove}
         value={lockedAmount}
         onUserInput={handleStakeInputChange}
-        currencyValue={`~${usedValueStaked || 0} USD`}
+        currencyValue={`~${usdValueStaked || 0} USD`}
         decimals={stakingDecimals}
       />
+      {needApprove && !userNotEnoughCake ? (
+        <Text color="failure" textAlign="right" fontSize="12px" mt="8px">
+          {t('Insufficient token allowance. Click "Enable" to approve.')}
+        </Text>
+      ) : null}
       <Flex alignItems="center" justifyContent="flex-end" mt="4px" mb="12px">
         <Flex justifyContent="flex-end" flexDirection="column">
           {userNotEnoughCake && (

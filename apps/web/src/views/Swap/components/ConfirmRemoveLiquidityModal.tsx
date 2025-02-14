@@ -1,17 +1,14 @@
 import React, { useCallback } from 'react'
 import { Currency, CurrencyAmount, Pair, Percent, Token } from '@pancakeswap/sdk'
-import { AddIcon, Button, InjectedModalProps, Text } from '@pancakeswap/uikit'
+import { AddIcon, Button, InjectedModalProps, Text, AutoColumn } from '@pancakeswap/uikit'
+import { ConfirmationModalContent } from '@pancakeswap/widgets-internal'
+
 import { useTranslation } from '@pancakeswap/localization'
-import TransactionConfirmationModal, {
-  ConfirmationModalContent,
-  TransactionErrorContent,
-} from 'components/TransactionConfirmationModal'
-import { AutoColumn } from 'components/Layout/Column'
+import TransactionConfirmationModal from 'components/TransactionConfirmationModal'
 import { RowBetween, RowFixed } from 'components/Layout/Row'
 import { Field } from 'state/burn/actions'
 import { CurrencyLogo, DoubleCurrencyLogo } from 'components/Logo'
 import { ApprovalState } from 'hooks/useApproveCallback'
-import { ZapErrorMessages } from '../../AddLiquidity/components/ZapErrorMessage'
 
 interface ConfirmRemoveLiquidityModalProps {
   title: string
@@ -28,15 +25,13 @@ interface ConfirmRemoveLiquidityModalProps {
   }
   allowedSlippage: number
   onRemove: () => void
-  liquidityErrorMessage: string
+  liquidityErrorMessage?: string
   approval: ApprovalState
   signatureData?: any
   tokenA: Token
   tokenB: Token
-  currencyA: Currency | null | undefined
-  currencyB: Currency | null | undefined
-  isZap?: boolean
-  toggleZapMode?: (value: boolean) => void
+  currencyA?: Currency
+  currencyB?: Currency
 }
 
 const ConfirmRemoveLiquidityModal: React.FC<
@@ -59,8 +54,6 @@ const ConfirmRemoveLiquidityModal: React.FC<
   tokenB,
   currencyA,
   currencyB,
-  isZap,
-  toggleZapMode,
 }) => {
   const { t } = useTranslation()
 
@@ -145,18 +138,8 @@ const ConfirmRemoveLiquidityModal: React.FC<
   }, [currencyA, currencyB, parsedAmounts, approval, onRemove, pair, tokenA, tokenB, t, signatureData])
 
   const confirmationContent = useCallback(
-    () =>
-      liquidityErrorMessage ? (
-        <>
-          {isZap && (
-            <ZapErrorMessages isSingleToken zapMode={isZap} toggleZapMode={toggleZapMode} onModalDismiss={onDismiss} />
-          )}
-          <TransactionErrorContent onDismiss={onDismiss} message={liquidityErrorMessage} />
-        </>
-      ) : (
-        <ConfirmationModalContent topContent={modalHeader} bottomContent={modalBottom} />
-      ),
-    [liquidityErrorMessage, isZap, toggleZapMode, onDismiss, modalHeader, modalBottom],
+    () => <ConfirmationModalContent topContent={modalHeader} bottomContent={modalBottom} />,
+    [modalHeader, modalBottom],
   )
 
   return (
@@ -166,6 +149,7 @@ const ConfirmRemoveLiquidityModal: React.FC<
       customOnDismiss={customOnDismiss}
       attemptingTxn={attemptingTxn}
       hash={hash}
+      errorMessage={liquidityErrorMessage}
       content={confirmationContent}
       pendingText={pendingText}
     />

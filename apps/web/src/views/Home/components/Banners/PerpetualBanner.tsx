@@ -1,10 +1,20 @@
-import { ArrowForwardIcon, Button, Text, Link, useMatchBreakpoints, useIsomorphicEffect } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import Image from 'next/image'
+import {
+  ArrowForwardIcon,
+  Button,
+  Link,
+  Text,
+  useIsomorphicEffect,
+  useMatchBreakpoints,
+  useModal,
+} from '@pancakeswap/uikit'
+import USCitizenConfirmModal from 'components/Modal/USCitizenConfirmModal'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useUserNotUsCitizenAcknowledgement, IdType } from 'hooks/useUserIsUsCitizenAcknowledgement'
+import Image from 'next/legacy/image'
 import { memo, useMemo, useRef } from 'react'
-import styled, { useTheme } from 'styled-components'
-import { perpLangMap } from 'utils/getPerpetualLanguageCode'
-import { perpTheme } from 'utils/getPerpetualTheme'
+import { styled, useTheme } from 'styled-components'
+import { getPerpetualUrl } from 'utils/getPerpetualUrl'
 import { perpetualImage, perpetualMobileImage } from './images'
 import * as S from './Styled'
 
@@ -41,18 +51,23 @@ const PerpetualBanner = () => {
   } = useTranslation()
   const { isDesktop, isMobile } = useMatchBreakpoints()
   const { isDark } = useTheme()
+  const { chainId } = useActiveChainId()
 
-  const perpetualUrl = useMemo(
-    () => `https://perp.pancakeswap.finance/${perpLangMap(code)}/futures/BTCUSDT?theme=${perpTheme(isDark)}`,
-    [code, isDark],
-  )
+  const perpetualUrl = useMemo(() => getPerpetualUrl({ chainId, languageCode: code, isDark }), [chainId, code, isDark])
   const headerRef = useRef<HTMLDivElement>(null)
+  const [onUSCitizenModalPresent] = useModal(
+    <USCitizenConfirmModal title={t('PancakeSwap Perpetuals')} id={IdType.PERPETUALS} />,
+    true,
+    false,
+    'usCitizenConfirmModal',
+  )
+  const [userNotUsCitizenAcknowledgement] = useUserNotUsCitizenAcknowledgement(IdType.PERPETUALS)
 
   useIsomorphicEffect(() => {
     const target = headerRef.current
+    if (!target || !isMobile) return
     target.style.fontSize = '' // reset
     target.style.lineHeight = ''
-    if (!target || !isMobile) return
     if (target.offsetHeight > HEADING_ONE_LINE_HEIGHT) {
       target.style.fontSize = '18px'
       target.style.lineHeight = `${HEADING_ONE_LINE_HEIGHT}px`
@@ -60,12 +75,26 @@ const PerpetualBanner = () => {
   }, [isMobile, code])
 
   return (
-    <S.Wrapper>
+    <S.Wrapper
+      style={{
+        background: `linear-gradient(140deg, #7645d9 0%, #452a7a 100%)`,
+      }}
+    >
       <S.Inner>
         <S.LeftWrapper>
           <S.StyledSubheading ref={headerRef}>{t('Perpetual Futures')}</S.StyledSubheading>
-          <Header width={['160px', '160px', 'auto']}>{t('Up to 100× Leverage')}</Header>
-          <Link href={perpetualUrl} external>
+          <Header width={['160px', '160px', 'auto']}>{t('Up to 1001× Leverage')}</Header>
+          <Link
+            href={perpetualUrl}
+            external
+            onClick={(e) => {
+              if (!userNotUsCitizenAcknowledgement) {
+                e.stopPropagation()
+                e.preventDefault()
+                onUSCitizenModalPresent()
+              }
+            }}
+          >
             <Button>
               <Text color="invertedContrast" bold fontSize="16px" mr="4px">
                 {t('Trade Now')}

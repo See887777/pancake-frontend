@@ -1,6 +1,5 @@
-import styled from 'styled-components'
-import { useAccount } from 'wagmi'
 import {
+  Balance,
   Box,
   Card,
   CardHeader,
@@ -8,17 +7,19 @@ import {
   Flex,
   Text,
   TokenPairImage as UITokenPairImage,
-  Balance,
-  Pool,
 } from '@pancakeswap/uikit'
-import { useVaultPoolByKey, useIfoCredit } from 'state/pools/hooks'
+import { Pool } from '@pancakeswap/widgets-internal'
+import { styled } from 'styled-components'
+import { useAccount } from 'wagmi'
+
 import { useTranslation } from '@pancakeswap/localization'
-import { vaultPoolConfig } from 'config/constants/pools'
-import { VaultKey } from 'state/types'
+import { Token } from '@pancakeswap/sdk'
 import { getBalanceNumber } from '@pancakeswap/utils/formatBalance'
+import { vaultPoolConfig } from 'config/constants/pools'
+import { useIfoCredit, useVaultPoolByKey } from 'state/pools/hooks'
+import { VaultKey } from 'state/types'
 import { useConfig } from 'views/Ifos/contexts/IfoContext'
 import { CakeVaultDetail } from 'views/Pools/components/CakeVaultCard'
-import { Token } from '@pancakeswap/sdk'
 
 const StyledCardMobile = styled(Card)`
   max-width: 400px;
@@ -33,7 +34,7 @@ const StyledTokenContent = styled(Flex)`
 `
 
 interface IfoPoolVaultCardMobileProps {
-  pool: Pool.DeserializedPool<Token>
+  pool?: Pool.DeserializedPool<Token>
 }
 
 const IfoPoolVaultCardMobile: React.FC<React.PropsWithChildren<IfoPoolVaultCardMobileProps>> = ({ pool }) => {
@@ -43,15 +44,18 @@ const IfoPoolVaultCardMobile: React.FC<React.PropsWithChildren<IfoPoolVaultCardM
   const { isExpanded, setIsExpanded } = useConfig()
   const cakeAsNumberBalance = getBalanceNumber(credit)
 
-  const vaultPool = useVaultPoolByKey(pool.vaultKey)
+  const vaultPool = useVaultPoolByKey(pool?.vaultKey || VaultKey.CakeVault)
 
-  const {
-    userData: { userShares, isLoading: isVaultUserDataLoading },
-    fees: { performanceFeeAsDecimal },
-  } = vaultPool
+  const { userData, fees } = vaultPool
+  const { userShares, isLoading: isVaultUserDataLoading } = userData ?? {}
+  const { performanceFeeAsDecimal } = fees ?? {}
 
   const accountHasSharesStaked = userShares && userShares.gt(0)
-  const isLoading = !pool.userData || isVaultUserDataLoading
+  const isLoading = !pool?.userData || isVaultUserDataLoading
+
+  if (!pool) {
+    return null
+  }
 
   return (
     <StyledCardMobile isActive>

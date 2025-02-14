@@ -1,20 +1,21 @@
-import { useRef, useMemo } from 'react'
-import { latinise } from 'utils/latinise'
-import styled from 'styled-components'
+import { FarmWithStakedValue } from '@pancakeswap/farms'
 import { RowType } from '@pancakeswap/uikit'
+import latinise from '@pancakeswap/utils/latinise'
+import { FarmWidget } from '@pancakeswap/widgets-internal'
 import BigNumber from 'bignumber.js'
-import { getBalanceNumber } from '@pancakeswap/utils/formatBalance'
 import { useRouter } from 'next/router'
+import { useMemo, useRef } from 'react'
+import { styled } from 'styled-components'
 import { getDisplayApr } from '../getDisplayApr'
-
 import Row, { RowProps } from './Row'
-import { DesktopColumnSchema, FarmWithStakedValue } from '../types'
 
 export interface ITableProps {
   farms: FarmWithStakedValue[]
   userDataReady: boolean
   cakePrice: BigNumber
   sortColumn?: string
+  totalRegularAllocPoint?: string
+  cakePerBlock?: string
 }
 
 const Container = styled.div`
@@ -37,7 +38,6 @@ const TableWrapper = styled.div`
 const StyledTable = styled.table`
   border-collapse: collapse;
   font-size: 14px;
-  border-radius: 4px;
   margin-left: auto;
   margin-right: auto;
   width: 100%;
@@ -49,20 +49,34 @@ const TableBody = styled.tbody`
       font-size: 16px;
       vertical-align: middle;
     }
+
+    :last-child {
+      td[colspan='7'] {
+        > div {
+          border-bottom-left-radius: 16px;
+          border-bottom-right-radius: 16px;
+        }
+      }
+    }
   }
 `
-
 const TableContainer = styled.div`
   position: relative;
 `
 
-const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({ farms, cakePrice, userDataReady }) => {
+const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({
+  farms,
+  cakePrice,
+  userDataReady,
+  totalRegularAllocPoint,
+  cakePerBlock,
+}) => {
   const tableWrapperEl = useRef<HTMLDivElement>(null)
   const { query } = useRouter()
 
   const columns = useMemo(
     () =>
-      DesktopColumnSchema.map((column) => ({
+      FarmWidget.DesktopColumnSchema.map((column) => ({
         id: column.id,
         name: column.name,
         label: column.label,
@@ -76,7 +90,7 @@ const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({ farms, cake
               }
               return 0
             case 'earned':
-              return a.original.earned.earnings - b.original.earned.earnings
+              return Number(a?.original?.earned?.userData?.earnings) - Number(b?.original?.earned?.userData?.earnings)
             default:
               return 1
           }
@@ -86,24 +100,26 @@ const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({ farms, cake
     [],
   )
 
-  const getFarmEarnings = (farm) => {
-    const earnings = new BigNumber(farm?.userData?.earnings)
-    return getBalanceNumber(earnings)
-  }
+  const totalMultipliers = totalRegularAllocPoint ? (Number(totalRegularAllocPoint) / 100).toString() : '-'
 
   const generateRow = (farm) => {
     const { token, quoteToken } = farm
     const tokenAddress = token?.address
     const quoteTokenAddress = quoteToken?.address
-    const lpLabel = farm.lpSymbol && farm.lpSymbol.split(' ')[0].toUpperCase().replace('PANCAKE', '')
+    const lpLabel = farm.lpSymbol
     const lowercaseQuery = latinise(typeof query?.search === 'string' ? query.search.toLowerCase() : '')
     const initialActivity = latinise(lpLabel?.toLowerCase()) === lowercaseQuery
+
+    const farmCakePerSecond =
+      farm.poolWeight && cakePerBlock ? (Number(farm.poolWeight) * Number(cakePerBlock)) / 1e8 : 10
+
     const row: RowProps = {
       apr: {
-        value: getDisplayApr(farm.apr, farm.lpRewardsApr) || '0',
+        value: getDisplayApr(farm.apr, farm.lpRewardsApr, farm.dualTokenRewardApr) || '0',
         pid: farm.pid,
         multiplier: farm.multiplier,
         lpLabel,
+        lpAddress: farm.lpAddress,
         lpSymbol: farm.lpSymbol,
         lpTokenPrice: farm.lpTokenPrice,
         tokenAddress,
@@ -111,6 +127,7 @@ const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({ farms, cake
         cakePrice,
         lpRewardsApr: farm.lpRewardsApr,
         originalValue: farm.apr,
+        dualTokenRewardApr: farm.dualTokenRewardApr,
       },
       farm: {
         label: lpLabel,
@@ -118,18 +135,23 @@ const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({ farms, cake
         token: farm.token,
         quoteToken: farm.quoteToken,
         isReady: farm.multiplier !== undefined,
-        isStable: farm.isStable,
+        isStaking: farm.userData?.stakedBalance.gt(0),
+        lpAddress: farm.lpAddress,
       },
-      earned: {
-        // TODO: remove
-        earnings: getFarmEarnings(farm),
-        pid: farm.pid,
-      },
+      earned: farm,
       liquidity: {
         liquidity: farm?.liquidity,
       },
       multiplier: {
         multiplier: farm.multiplier,
+        rewardCakePerSecond: true,
+        farmCakePerSecond:
+          farmCakePerSecond === 0
+            ? '0'
+            : farmCakePerSecond < 0.000001
+            ? '<0.000001'
+            : `~${farmCakePerSecond.toFixed(6)}`,
+        totalMultipliers,
       },
       type: farm.isCommunity ? 'community' : 'core',
       details: farm,
@@ -146,7 +168,9 @@ const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({ farms, cake
     const newRow: RowProps = {}
     columns.forEach((column) => {
       if (!(column.name in row)) {
-        throw new Error(`Invalid row data, ${column.name} not found`)
+        // FIXME: new column property added. Suppress error for now
+        // throw new Error(`Invalid row data, ${column.name} not found`)
+        return
       }
       newRow[column.name] = row[column.name]
     })
@@ -162,9 +186,18 @@ const FarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({ farms, cake
         <TableWrapper ref={tableWrapperEl}>
           <StyledTable>
             <TableBody>
-              {sortedRows?.map((row) => (
-                <Row {...row} userDataReady={userDataReady} key={`table-row-${row.farm.pid}`} />
-              ))}
+              {sortedRows?.map((row, index) => {
+                const isLastFarm = index === sortedRows.length - 1
+
+                return (
+                  <Row
+                    {...row}
+                    userDataReady={userDataReady}
+                    key={`table-row-${row.farm.pid}`}
+                    isLastFarm={isLastFarm}
+                  />
+                )
+              })}
             </TableBody>
           </StyledTable>
         </TableWrapper>

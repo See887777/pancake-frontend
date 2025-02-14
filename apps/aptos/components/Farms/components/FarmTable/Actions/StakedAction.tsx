@@ -1,53 +1,40 @@
-import { useAccountBalance } from '@pancakeswap/awgmi'
+import { useBalance } from '@pancakeswap/awgmi'
 import { TransactionResponse } from '@pancakeswap/awgmi/core'
 import type { DeserializedFarmUserData } from '@pancakeswap/farms'
+import { FarmWithStakedValue } from '@pancakeswap/farms'
 import { useTranslation } from '@pancakeswap/localization'
-import { AddIcon, Farm as FarmUI, IconButton, MinusIcon, Skeleton, Text, useModal, useToast } from '@pancakeswap/uikit'
+import { useModal, useToast } from '@pancakeswap/uikit'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import { FarmWidget } from '@pancakeswap/widgets-internal'
 import BigNumber from 'bignumber.js'
 import { ConnectWalletButton } from 'components/ConnectWalletButton'
+import { FARM_DEFAULT_DECIMALS } from 'components/Farms/constants'
+import { useCheckIsUserIpPass } from 'components/Farms/hooks/useCheckIsUserIpPass'
 import { ToastDescriptionWithTx } from 'components/Toast'
 import { BASE_ADD_LIQUIDITY_URL } from 'config'
 import useActiveWeb3React from 'hooks/useActiveWeb3React'
 import useCatchTxError from 'hooks/useCatchTxError'
-import { useCakePriceAsBigNumber } from 'hooks/useStablePrice'
+import { usePriceCakeUsdc } from 'hooks/useStablePrice'
 import { useRouter } from 'next/router'
 import { useMemo } from 'react'
-import { useFarmUserInfoCache } from 'state/farms/hook'
-import styled from 'styled-components'
+import { logGTMClickStakeFarmEvent, logGTMClickUnStakeFarmEvent } from 'utils/customGTMEventTracking'
 import getLiquidityUrlPathParts from 'utils/getLiquidityUrlPathParts'
 import useStakeFarms from '../../../hooks/useStakeFarms'
 import useUnstakeFarms from '../../../hooks/useUnstakeFarms'
-import { FarmWithStakedValue } from '../../types'
-import { ActionContainer, ActionContent, ActionTitles } from './styles'
-
-const IconButtonWrapper = styled.div`
-  display: flex;
-`
-
-const StyledActionContainer = styled(ActionContainer)`
-  &:nth-child(3) {
-    flex-basis: 100%;
-  }
-  min-height: 124.5px;
-  ${({ theme }) => theme.mediaQueries.sm} {
-    &:nth-child(3) {
-      margin-top: 16px;
-    }
-  }
-`
 
 interface StackedActionProps extends FarmWithStakedValue {
   userDataReady: boolean
   lpLabel?: string
   displayApr?: string
+  farmCakePerSecond?: string
+  totalMultipliers?: string
   onStake: (value: string) => Promise<TransactionResponse>
   onUnstake: (value: string) => Promise<TransactionResponse>
 }
 
-export function useStakedActions(pid, tokenType) {
-  const { onStake } = useStakeFarms(pid, tokenType)
-  const { onUnstake } = useUnstakeFarms(pid, tokenType)
+export function useStakedActions(tokenType) {
+  const { onStake } = useStakeFarms(tokenType)
+  const { onUnstake } = useUnstakeFarms(tokenType)
 
   return {
     onStake,
@@ -56,22 +43,22 @@ export function useStakedActions(pid, tokenType) {
 }
 
 export const StakedContainer = ({ children, ...props }) => {
-  const { onStake, onUnstake } = useStakedActions(props.pid, props.lpAddress)
+  const { onStake, onUnstake } = useStakedActions(props.lpAddress)
   const { account } = useActiveWeb3React()
-  const { data: tokenBalance = BIG_ZERO } = useAccountBalance({
+  const { data: tokenBalance = BIG_ZERO } = useBalance({
     watch: true,
     address: account,
     coin: props.lpAddress,
     select: (d) => new BigNumber(d.value),
   })
-  const { data: userInfo } = useFarmUserInfoCache(String(props.pid))
 
-  const userData = useMemo(() => {
-    return {
-      stakedBalance: userInfo?.amount ? new BigNumber(userInfo.amount) : BIG_ZERO,
+  const userData = useMemo(
+    () => ({
+      ...props.userData,
       tokenBalance,
-    }
-  }, [tokenBalance, userInfo?.amount])
+    }),
+    [props.userData, tokenBalance],
+  )
 
   return children({
     ...props,
@@ -96,6 +83,10 @@ const Staked: React.FunctionComponent<React.PropsWithChildren<StackedActionProps
   tokenAmountTotal = BIG_ZERO,
   quoteTokenAmountTotal = BIG_ZERO,
   userData,
+  dualTokenRewardApr,
+  farmCakePerSecond,
+  totalMultipliers,
+  lpRewardsApr,
   onStake,
   onUnstake,
 }) => {
@@ -103,11 +94,12 @@ const Staked: React.FunctionComponent<React.PropsWithChildren<StackedActionProps
   const { toastSuccess } = useToast()
   const { fetchWithCatchTxError } = useCatchTxError()
   const { account } = useActiveWeb3React()
+  const isUserIpPass = useCheckIsUserIpPass()
 
   const { stakedBalance, tokenBalance } = (userData as DeserializedFarmUserData) || {}
 
   const router = useRouter()
-  const cakePrice = useCakePriceAsBigNumber()
+  const cakePrice = usePriceCakeUsdc()
 
   const liquidityUrlPathParts = getLiquidityUrlPathParts({
     quoteTokenAddress: quoteToken?.address,
@@ -129,6 +121,7 @@ const Staked: React.FunctionComponent<React.PropsWithChildren<StackedActionProps
         </ToastDescriptionWithTx>,
       )
     }
+    logGTMClickStakeFarmEvent()
   }
 
   const handleUnstake = async (amount: string) => {
@@ -141,17 +134,28 @@ const Staked: React.FunctionComponent<React.PropsWithChildren<StackedActionProps
         </ToastDescriptionWithTx>,
       )
     }
+    logGTMClickUnStakeFarmEvent()
   }
 
+  const combineApr = useMemo(() => {
+    let total = new BigNumber(apr ?? 0).plus(lpRewardsApr ?? 0)
+    if (dualTokenRewardApr) {
+      total = new BigNumber(apr ?? 0).plus(lpRewardsApr ?? 0).plus(dualTokenRewardApr)
+    }
+
+    return total.toNumber()
+  }, [apr, dualTokenRewardApr, lpRewardsApr])
+
   const [onPresentDeposit] = useModal(
-    <FarmUI.DepositModal
+    <FarmWidget.DepositModal
       account={account || ''}
       pid={pid}
       lpTotalSupply={lpTotalSupply}
       max={tokenBalance}
       lpPrice={lpTokenPrice}
       lpLabel={lpLabel}
-      apr={apr}
+      apr={combineApr}
+      lpRewardsApr={lpRewardsApr}
       displayApr={displayApr}
       stakedBalance={stakedBalance}
       onConfirm={handleStake}
@@ -159,72 +163,67 @@ const Staked: React.FunctionComponent<React.PropsWithChildren<StackedActionProps
       multiplier={multiplier}
       addLiquidityUrl={addLiquidityUrl}
       cakePrice={cakePrice}
+      decimals={FARM_DEFAULT_DECIMALS}
+      dualTokenRewardApr={dualTokenRewardApr}
+      farmCakePerSecond={farmCakePerSecond}
+      totalMultipliers={totalMultipliers}
+      rewardCakePerSecond
+      showTopMessageText={
+        isUserIpPass
+          ? null
+          : t(
+              'The CAKE and APT Farm rewards for this pool will not be applicable to or claimable by U.S.-based and VPN users.',
+            )
+      }
     />,
   )
 
   const [onPresentWithdraw] = useModal(
-    <FarmUI.WithdrawModal max={stakedBalance} onConfirm={handleUnstake} tokenName={lpSymbol} decimals={8} />,
+    <FarmWidget.WithdrawModal
+      max={stakedBalance}
+      lpPrice={lpTokenPrice}
+      onConfirm={handleUnstake}
+      tokenName={lpSymbol}
+      decimals={FARM_DEFAULT_DECIMALS}
+    />,
   )
 
   if (!account) {
     return (
-      <FarmUI.FarmTable.AccountNotConnect>
+      <FarmWidget.FarmTable.AccountNotConnect>
         <ConnectWalletButton width="100%" />
-      </FarmUI.FarmTable.AccountNotConnect>
+      </FarmWidget.FarmTable.AccountNotConnect>
     )
   }
 
   if (!userDataReady) {
-    return (
-      <StyledActionContainer>
-        <ActionTitles>
-          <Text bold textTransform="uppercase" color="textSubtle" fontSize="12px">
-            {t('Start Farming')}
-          </Text>
-        </ActionTitles>
-        <ActionContent>
-          <Skeleton width={180} marginBottom={28} marginTop={14} />
-        </ActionContent>
-      </StyledActionContainer>
-    )
+    return <FarmWidget.FarmTable.StakeActionDataNotReady />
   }
 
   if (stakedBalance.gt(0)) {
     return (
-      <StyledActionContainer>
-        <ActionTitles>
-          <Text bold textTransform="uppercase" color="secondary" fontSize="12px" pr="4px">
-            {lpSymbol}
-          </Text>
-          <Text bold textTransform="uppercase" color="textSubtle" fontSize="12px">
-            {t('Staked')}
-          </Text>
-        </ActionTitles>
-        <ActionContent>
-          <FarmUI.StakedLP
-            stakedBalance={stakedBalance}
-            quoteTokenSymbol={quoteToken.symbol}
-            tokenSymbol={token.symbol}
-            lpTotalSupply={lpTotalSupply}
-            lpTokenPrice={lpTokenPrice}
-            tokenAmountTotal={tokenAmountTotal}
-            quoteTokenAmountTotal={quoteTokenAmountTotal}
-          />
-          <IconButtonWrapper>
-            <IconButton mr="6px" variant="secondary" onClick={onPresentWithdraw}>
-              <MinusIcon color="primary" width="14px" />
-            </IconButton>
-            <IconButton variant="secondary" onClick={onPresentDeposit} disabled={isStakeReady}>
-              <AddIcon color="primary" width="14px" />
-            </IconButton>
-          </IconButtonWrapper>
-        </ActionContent>
-      </StyledActionContainer>
+      <FarmWidget.FarmTable.StakedActionComponent
+        lpSymbol={lpSymbol}
+        disabledPlusButton={isStakeReady}
+        onPresentWithdraw={onPresentWithdraw}
+        onPresentDeposit={onPresentDeposit}
+      >
+        <FarmWidget.StakedLP
+          decimals={FARM_DEFAULT_DECIMALS}
+          stakedBalance={stakedBalance}
+          quoteTokenSymbol={quoteToken.symbol}
+          tokenSymbol={token.symbol}
+          lpTotalSupply={lpTotalSupply}
+          lpTokenPrice={lpTokenPrice}
+          tokenAmountTotal={tokenAmountTotal}
+          quoteTokenAmountTotal={quoteTokenAmountTotal}
+        />
+      </FarmWidget.FarmTable.StakedActionComponent>
     )
   }
 
   return (
-    <FarmUI.FarmTable.StakeComponent
+    <FarmWidget.FarmTable.StakeComponent
       lpSymbol={lpSymbol}
       isStakeReady={isStakeReady}
       onPresentDeposit={onPresentDeposit}

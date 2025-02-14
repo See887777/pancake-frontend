@@ -1,7 +1,14 @@
-import { StaticJsonRpcProvider } from '@ethersproject/providers'
+import { createPublicClient, http } from 'viem'
+import { polygon } from 'viem/chains'
 
-export const BSC_PROD_NODE = process.env.NEXT_PUBLIC_NODE_PRODUCTION || 'https://bsc.nodereal.io'
-
-export const bscRpcProvider = new StaticJsonRpcProvider(BSC_PROD_NODE)
-
-export default null
+export const polygonRpcProvider = createPublicClient({
+  transport: http(),
+  chain: polygon,
+  batch: {
+    multicall: {
+      batchSize: 1024 * 200,
+      wait: 16,
+    },
+  },
+  pollingInterval: 6_000,
+})

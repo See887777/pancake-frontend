@@ -1,50 +1,68 @@
-import { useState, useEffect } from 'react'
-import { useFarms, usePriceCakeBusd } from 'state/farms/hooks'
-import { featureFarmApiAtom, useFeatureFlag } from 'hooks/useFeatureFlag'
+import { getLegacyFarmConfig } from '@pancakeswap/farms'
+import { useQuery } from '@tanstack/react-query'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useCakePrice } from 'hooks/useCakePrice'
+import orderBy from 'lodash/orderBy'
+import { fetchV3FarmsAvgInfo } from 'queries/farms'
+import { useEffect, useState } from 'react'
 import { useAppDispatch } from 'state'
 import { fetchFarmsPublicDataAsync } from 'state/farms'
+import { useFarms } from 'state/farms/hooks'
+import { useFarmsV3 } from 'state/farmsV3/hooks'
 import { getFarmApr } from 'utils/apr'
-import orderBy from 'lodash/orderBy'
-import { DeserializedFarm } from '@pancakeswap/farms'
-import { FetchStatus } from 'config/constants/types'
-import { getFarmConfig } from '@pancakeswap/farms/constants'
-import { useActiveChainId } from 'hooks/useActiveChainId'
-import { FarmWithStakedValue } from '../../Farms/components/types'
 
 const useGetTopFarmsByApr = (isIntersecting: boolean) => {
   const dispatch = useAppDispatch()
   const { data: farms, regularCakePerBlock } = useFarms()
-  const [fetchStatus, setFetchStatus] = useState(FetchStatus.Idle)
-  const [fetched, setFetched] = useState(false)
-  const [topFarms, setTopFarms] = useState<FarmWithStakedValue[]>([null, null, null, null, null])
-  const cakePriceBusd = usePriceCakeBusd()
+  const { data: farmsV3, isLoading } = useFarmsV3()
+  const [topFarms, setTopFarms] = useState<
+    ({
+      lpSymbol: string
+      apr: number | null
+      lpRewardsApr: number
+      version: 2 | 3
+    } | null)[]
+  >(() => [null, null, null, null, null])
+  const cakePrice = useCakePrice()
   const { chainId } = useActiveChainId()
-  const farmFlag = useFeatureFlag(featureFarmApiAtom)
+
+  const { status: fetchStatus, isFetching } = useQuery({
+    queryKey: [chainId, 'fetchTopFarmsByApr'],
+
+    queryFn: async () => {
+      if (!chainId) return undefined
+      const farmsConfig = await getLegacyFarmConfig(chainId)
+      const activeFarms = farmsConfig?.filter((farm) => farm.pid !== 0)
+      return dispatch(fetchFarmsPublicDataAsync({ pids: activeFarms?.map((farm) => farm.pid) ?? [], chainId }))
+    },
+
+    enabled: Boolean(isIntersecting && chainId),
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  })
+
+  const { data: farmsV3Aprs } = useQuery({
+    queryKey: [chainId, 'farmsV3Apr'],
+
+    queryFn: async () => {
+      if (!chainId) return undefined
+      const farmAvgInfo = await fetchV3FarmsAvgInfo(chainId)
+      return Object.keys(farmAvgInfo).reduce((acc, key) => {
+        const tokenData = farmAvgInfo[key]
+        // eslint-disable-next-line no-param-reassign
+        acc[key] = parseFloat(tokenData.apr7d.toFixed(2))
+        return acc
+      }, {} as Record<string, number>)
+    },
+
+    enabled: Boolean(isIntersecting && chainId),
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  })
 
   useEffect(() => {
-    const fetchFarmData = async () => {
-      const farmsConfig = await getFarmConfig(chainId)
-      setFetchStatus(FetchStatus.Fetching)
-      const activeFarms = farmsConfig.filter((farm) => farm.pid !== 0)
-      try {
-        await dispatch(
-          fetchFarmsPublicDataAsync({ pids: activeFarms.map((farm) => farm.pid), chainId, flag: farmFlag }),
-        )
-        setFetchStatus(FetchStatus.Fetched)
-      } catch (e) {
-        console.error(e)
-        setFetchStatus(FetchStatus.Failed)
-      }
-    }
-
-    if (isIntersecting && fetchStatus === FetchStatus.Idle) {
-      fetchFarmData()
-    }
-  }, [dispatch, setFetchStatus, fetchStatus, topFarms, isIntersecting, chainId, farmFlag])
-
-  useEffect(() => {
-    const getTopFarmsByApr = (farmsState: DeserializedFarm[]) => {
-      const farmsWithPrices = farmsState.filter(
+    if (fetchStatus === 'success' && farms?.length > 0 && !isLoading) {
+      const farmsWithPrices = farms.filter(
         (farm) =>
           farm.lpTotalInQuoteToken &&
           farm.quoteTokenPriceBusd &&
@@ -52,30 +70,40 @@ const useGetTopFarmsByApr = (isIntersecting: boolean) => {
           farm.multiplier &&
           farm.multiplier !== '0X',
       )
-      const farmsWithApr: FarmWithStakedValue[] = farmsWithPrices.map((farm) => {
-        const totalLiquidity = farm.lpTotalInQuoteToken.times(farm.quoteTokenPriceBusd)
+      const farmsWithApr = farmsWithPrices.map((farm) => {
+        const totalLiquidity = farm?.quoteTokenPriceBusd
+          ? farm?.lpTotalInQuoteToken?.times(farm.quoteTokenPriceBusd)
+          : undefined
         const { cakeRewardsApr, lpRewardsApr } = getFarmApr(
           chainId,
           farm.poolWeight,
-          cakePriceBusd,
+          cakePrice,
           totalLiquidity,
           farm.lpAddress,
           regularCakePerBlock,
+          farm.lpRewardsApr,
         )
-        return { ...farm, apr: cakeRewardsApr, lpRewardsApr }
+        return { ...farm, apr: cakeRewardsApr, lpRewardsApr, version: 2 as const }
       })
 
-      const sortedByApr = orderBy(farmsWithApr, (farm) => farm.apr + farm.lpRewardsApr, 'desc')
+      const activeFarmV3 = farmsV3.farmsWithPrice
+        .filter((f) => f.multiplier !== '0X' && 'cakeApr' in f)
+        .map((f) => ({
+          ...f,
+          apr: f.cakeApr ? +f.cakeApr : Number.NaN,
+          lpRewardsApr: farmsV3Aprs?.[f.lpAddress] ?? 0,
+          version: 3 as const,
+        }))
+
+      const sortedByApr = orderBy(
+        [...farmsWithApr, ...activeFarmV3],
+        (farm) => (farm.apr !== null ? farm.apr + farm.lpRewardsApr : farm.lpRewardsApr),
+        'desc',
+      )
       setTopFarms(sortedByApr.slice(0, 5))
-      setFetched(true)
     }
-
-    if (fetchStatus === FetchStatus.Fetched && !topFarms[0] && farms?.length > 0) {
-      getTopFarmsByApr(farms)
-    }
-  }, [setTopFarms, farms, fetchStatus, cakePriceBusd, topFarms, regularCakePerBlock, chainId])
-
-  return { topFarms, fetched }
+  }, [cakePrice, chainId, farms, farmsV3.farmsWithPrice, fetchStatus, isLoading, regularCakePerBlock, farmsV3Aprs])
+  return { topFarms, fetched: fetchStatus === 'success' && !isFetching, chainId }
 }
 
 export default useGetTopFarmsByApr

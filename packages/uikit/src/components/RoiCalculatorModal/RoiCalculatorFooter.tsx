@@ -1,21 +1,24 @@
-import { useState, useMemo } from "react";
-import styled from "styled-components";
 import { useTranslation } from "@pancakeswap/localization";
 import { getApy } from "@pancakeswap/utils/compoundApyHelpers";
+import BigNumber from "bignumber.js";
+import { useMemo, useState } from "react";
+import { styled } from "styled-components";
 
-import { Flex, Box, Grid } from "../Box";
-import { Text } from "../Text";
-import { HelpIcon } from "../Svg";
-import { LinkExternal } from "../Link";
-import { ExpandableLabel } from "../Button";
+import { BIG_ONE_HUNDRED } from "@pancakeswap/utils/bigNumber";
 import { useTooltip } from "../../hooks/useTooltip";
+import { Box, Flex, Grid } from "../Box";
+import { ExpandableLabel } from "../Button";
+import { Link, LinkExternal } from "../Link";
+import { HelpIcon } from "../Svg";
+import { Text } from "../Text";
+import { FarmMultiplierInfo } from "./FarmMultiplierInfo";
 
-const Footer = styled(Flex)`
+export const Footer = styled(Flex)`
   width: 100%;
   background: ${({ theme }) => theme.colors.dropdown};
 `;
 
-const BulletList = styled.ul`
+export const BulletList = styled.ul`
   list-style-type: none;
   margin-top: 16px;
   padding: 0;
@@ -36,13 +39,22 @@ const BulletList = styled.ul`
 interface RoiCalculatorFooterProps {
   isFarm: boolean;
   apr?: number;
+  lpRewardsApr?: number;
   apy?: number;
   displayApr?: string;
   autoCompoundFrequency: number;
   multiplier?: string;
   linkLabel: string;
-  linkHref: string;
+  linkHref?: string;
   performanceFee: number;
+  rewardCakePerSecond?: boolean;
+  isLocked?: boolean;
+  stableSwapAddress?: string;
+  stableLpFee?: number;
+  farmCakePerSecond?: string;
+  totalMultipliers?: string;
+  dualTokenRewardApr?: number;
+  isBCakeBooster?: boolean;
 }
 
 const RoiCalculatorFooter: React.FC<React.PropsWithChildren<RoiCalculatorFooterProps>> = ({
@@ -55,38 +67,45 @@ const RoiCalculatorFooter: React.FC<React.PropsWithChildren<RoiCalculatorFooterP
   linkLabel,
   linkHref,
   performanceFee,
+  rewardCakePerSecond,
+  isLocked = false,
+  stableSwapAddress,
+  stableLpFee,
+  farmCakePerSecond,
+  totalMultipliers,
+  dualTokenRewardApr,
+  lpRewardsApr,
+  isBCakeBooster,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { t } = useTranslation();
+  const isAptos = rewardCakePerSecond === true;
+
+  const multiplierTooltipContent = FarmMultiplierInfo({
+    farmCakePerSecond: farmCakePerSecond ?? "-",
+    totalMultipliers: totalMultipliers ?? "-",
+  });
   const {
     targetRef: multiplierRef,
     tooltip: multiplierTooltip,
     tooltipVisible: multiplierTooltipVisible,
-  } = useTooltip(
-    <>
-      <Text>
-        {t(
-          "The Multiplier represents the proportion of CAKE rewards each farm receives, as a proportion of the CAKE produced each block."
-        )}
-      </Text>
-      <Text my="24px">
-        {t("For example, if a 1x farm received 1 CAKE per block, a 40x farm would receive 40 CAKE per block.")}
-      </Text>
-      <Text>{t("This amount is already included in all APR calculations for the farm.")}</Text>
-    </>,
-    { placement: "top-end", tooltipOffset: [20, 10] }
-  );
+  } = useTooltip(multiplierTooltipContent, { placement: "top-end", tooltipOffset: [20, 10] });
 
   const gridRowCount = isFarm ? 4 : 2;
-  const lpRewardsAPR = useMemo(
-    () =>
-      isFarm
-        ? Number.isFinite(Number(displayApr)) && Number.isFinite(apr)
-          ? Math.max(Number(displayApr) - apr, 0).toFixed(2)
-          : null
-        : null,
-    [isFarm, displayApr, apr]
-  );
+
+  const cakeRewardAPRDisplay = useMemo(() => {
+    let total = new BigNumber(apr);
+    // TODO: In APTOS APR is combine APR (Cake APR + Apt APR + lp APR).
+    // Soon EVM (v2 Farm & pools) also will change to  combine APR.
+    if (dualTokenRewardApr !== undefined) {
+      total = new BigNumber(apr).minus(Number(dualTokenRewardApr ?? 0)).minus(lpRewardsApr ?? 0);
+    }
+    return total.toNumber();
+  }, [apr, dualTokenRewardApr, lpRewardsApr]);
+
+  const lpRewardsAPRDisplay = useMemo(() => {
+    return isFarm ? (lpRewardsApr ? Math.max(lpRewardsApr).toFixed(2) : null) : null;
+  }, [isFarm, lpRewardsApr]);
 
   return (
     <Footer p="16px" flexDirection="column">
@@ -99,7 +118,7 @@ const RoiCalculatorFooter: React.FC<React.PropsWithChildren<RoiCalculatorFooterP
             {!isFarm && (
               <>
                 <Text color="textSubtle" small>
-                  {Number.isFinite(apy) && apy !== 0 ? t("APY") : t("APR")}
+                  {Number.isFinite(apy) && apy !== 0 && !isLocked ? t("APY") : t("APR")}
                 </Text>
                 <Text small textAlign="right">
                   {Number.isFinite(apy) && apy !== 0 ? apy.toFixed(2) : apr?.toFixed(2)}%
@@ -115,16 +134,30 @@ const RoiCalculatorFooter: React.FC<React.PropsWithChildren<RoiCalculatorFooterP
                   {displayApr}%
                 </Text>
                 <Text color="textSubtle" small>
-                  *{t("Base APR (CAKE yield only)")}
+                  {`*${t("Base APR (CAKE yield only)")}`}
                 </Text>
                 <Text small textAlign="right">
-                  {apr.toFixed(2)}%
+                  {`${cakeRewardAPRDisplay?.toLocaleString("en-US", {
+                    maximumFractionDigits: 2,
+                  })}%`}
                 </Text>
+                {Number(dualTokenRewardApr) > 0 && (
+                  <>
+                    <Text color="textSubtle" small>
+                      {`*${t("Base APR (APT yield only)")}`}
+                    </Text>
+                    <Text small textAlign="right">
+                      {`${dualTokenRewardApr?.toLocaleString("en-US", {
+                        maximumFractionDigits: 2,
+                      })}%`}
+                    </Text>
+                  </>
+                )}
                 <Text color="textSubtle" small>
                   *{t("LP Rewards APR")}
                 </Text>
                 <Text small textAlign="right">
-                  {lpRewardsAPR === "0" ? "-" : lpRewardsAPR}%
+                  {lpRewardsAPRDisplay === "0" || !lpRewardsAPRDisplay ? "-" : lpRewardsAPRDisplay}%
                 </Text>
               </>
             )}
@@ -143,7 +176,7 @@ const RoiCalculatorFooter: React.FC<React.PropsWithChildren<RoiCalculatorFooterP
                 %
               </Text>
             )}
-            {isFarm && (
+            {isFarm && isBCakeBooster && (
               <>
                 <Text color="textSubtle" small>
                   {t("Farm Multiplier")}
@@ -167,11 +200,38 @@ const RoiCalculatorFooter: React.FC<React.PropsWithChildren<RoiCalculatorFooterP
               </Text>
             </li>
             {isFarm && (
-              <li>
-                <Text fontSize="12px" textAlign="center" color="textSubtle" display="inline">
-                  {t("LP rewards: 0.17% trading fees, distributed proportionally among LP token holders.")}
-                </Text>
-              </li>
+              <>
+                <li>
+                  <Text fontSize="12px" textAlign="center" color="textSubtle" display="inline">
+                    {t("LP rewards: %percent%% trading fees, distributed proportionally among LP token holders.", {
+                      percent: stableSwapAddress && stableLpFee ? BIG_ONE_HUNDRED.times(stableLpFee).toNumber() : 0.17,
+                    })}
+                  </Text>
+                </li>
+                <li>
+                  {isAptos ? (
+                    <Text fontSize="12px" textAlign="center" color="textSubtle" display="inline">
+                      {t(
+                        "To provide stable estimates, APR figures are calculated and updated daily using volume data from CoinMarketCap"
+                      )}
+                    </Text>
+                  ) : (
+                    <Text fontSize="12px" textAlign="center" color="textSubtle" display="inline">
+                      {t(
+                        "To provide stable estimates, APR figures are calculated once per day on the farm page. For real time APR, please visit the"
+                      )}
+                      <Link
+                        style={{ display: "inline-block" }}
+                        fontSize="12px"
+                        ml="3px"
+                        href={`/info${stableSwapAddress ? `/pairs/${stableSwapAddress}?type=stableSwap` : ""}`}
+                      >
+                        {t("Info Page")}
+                      </Link>
+                    </Text>
+                  )}
+                </li>
+              </>
             )}
             <li>
               <Text fontSize="12px" textAlign="center" color="textSubtle" display="inline" lineHeight={1.1}>

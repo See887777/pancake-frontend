@@ -1,43 +1,18 @@
-// Set of helper functions to facilitate wallet setup
-import { BAD_SRCS } from 'components/Logo/Logo'
+import { Connector } from 'wagmi'
 
-/**
- * Prompt the user to add a custom token to metamask
- * @param tokenAddress
- * @param tokenSymbol
- * @param tokenDecimals
- * @returns {boolean} true if the token has been added, false otherwise
- */
-export const registerToken = async (
-  tokenAddress: string,
-  tokenSymbol: string,
-  tokenDecimals: number,
-  tokenLogo?: string,
-) => {
-  // better leave this undefined for default image instead of broken image url
-  const image = tokenLogo ? (BAD_SRCS[tokenLogo] ? undefined : tokenLogo) : undefined
+export const checkWalletCanRegisterToken = async (connector: Connector) => {
+  try {
+    if (typeof connector.getProvider !== 'function') return false
 
-  const tokenAdded = await window.ethereum.request({
-    method: 'wallet_watchAsset',
-    params: {
-      type: 'ERC20',
-      options: {
-        address: tokenAddress,
-        symbol: tokenSymbol,
-        decimals: tokenDecimals,
-        image,
-      },
-    },
-  })
+    const provider = (await connector.getProvider()) as any
 
-  return tokenAdded
+    return Boolean(
+      provider &&
+        !provider.isSafePal &&
+        (provider.isMetaMask || provider.isTrust || provider.isCoinbaseWallet || provider.isTokenPocket),
+    )
+  } catch (error) {
+    console.error(error, 'Error determining wallet token registration support')
+    return false
+  }
 }
-
-export const canRegisterToken = () =>
-  typeof window !== 'undefined' &&
-  // @ts-ignore
-  !window?.ethereum?.isSafePal &&
-  (window?.ethereum?.isMetaMask ||
-    window?.ethereum?.isTrust ||
-    window?.ethereum?.isCoinbaseWallet ||
-    window?.ethereum?.isTokenPocket)

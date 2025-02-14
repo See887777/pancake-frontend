@@ -1,5 +1,6 @@
 import { Token } from '@pancakeswap/swap-sdk-core'
-import { HexString } from 'aptos'
+
+import { HexString } from './hexString'
 import { Currency } from './currency'
 
 export class Coin extends Token {
@@ -11,7 +12,7 @@ export class Coin extends Token {
     name?: string,
     projectLink?: string
   ) {
-    super(chainId, new HexString(address).toShortString(), decimals, symbol, name, projectLink)
+    super(chainId, new HexString(address).toShortString() as `0x${string}`, decimals, symbol, name, projectLink)
   }
 
   public sortsBefore(other: Currency): boolean {

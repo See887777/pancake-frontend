@@ -1,6 +1,5 @@
-import { FC } from 'react'
 import {
-  ModalContainer,
+  ModalWrapper,
   ModalBody,
   Text,
   Button,
@@ -11,7 +10,7 @@ import {
   Checkbox,
   Box,
 } from '@pancakeswap/uikit'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { useTranslation } from '@pancakeswap/localization'
 import { useUserPredictionChainlinkChartDisclaimerShow } from 'state/user/hooks'
 
@@ -26,16 +25,16 @@ const Ul = styled.ul`
   }
 `
 
-const ChartDisclaimer: FC<React.PropsWithChildren<InjectedModalProps>> = ({ onDismiss }) => {
+const ChartDisclaimer: React.FC<React.PropsWithChildren<InjectedModalProps>> = ({ onDismiss }) => {
   const [showDisclaimer, setShowDisclaimer] = useUserPredictionChainlinkChartDisclaimerShow()
   const { t } = useTranslation()
 
   const handleConfirm = () => {
-    onDismiss()
+    onDismiss?.()
   }
 
   return (
-    <ModalContainer $minWidth="320px">
+    <ModalWrapper minWidth="320px">
       <ModalBody p="24px" maxWidth="400px">
         <Flex justifyContent="center" mb="32px">
           <Image src="/images/predictions/chartwarning2.svg" width={190} height={118} />
@@ -69,7 +68,7 @@ const ChartDisclaimer: FC<React.PropsWithChildren<InjectedModalProps>> = ({ onDi
           </Flex>
         </label>
       </ModalBody>
-    </ModalContainer>
+    </ModalWrapper>
   )
 }
 

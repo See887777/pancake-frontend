@@ -1,22 +1,17 @@
-import { useState, useMemo, useCallback, useEffect, Fragment } from 'react'
-import styled from 'styled-components'
-import {
-  Text,
-  Flex,
-  Box,
-  Skeleton,
-  ArrowBackIcon,
-  ArrowForwardIcon,
-  useMatchBreakpoints,
-  NextLinkFromReactRouter,
-} from '@pancakeswap/uikit'
-import { useGetChainName, useMultiChainPath, useStableSwapPath } from 'state/info/hooks'
-import { TokenData } from 'state/info/types'
-import { CurrencyLogo } from 'views/Info/components/CurrencyLogo'
-import Percent from 'views/Info/components/Percent'
+import { ArrowBackIcon, ArrowForwardIcon, Box, Flex, Skeleton, Text, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { NextLinkFromReactRouter } from '@pancakeswap/widgets-internal'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { styled } from 'styled-components'
+
 import { useTranslation } from '@pancakeswap/localization'
 import orderBy from 'lodash/orderBy'
+import { multiChainId } from 'state/info/constant'
+import { useChainNameByQuery, useMultiChainPath, useStableSwapPath } from 'state/info/hooks'
+import { TokenData } from 'state/info/types'
 import { formatAmount } from 'utils/formatInfoNumbers'
+import { getTokenNameAlias, getTokenSymbolAlias } from 'utils/getTokenAlias'
+import { CurrencyLogo } from 'views/Info/components/CurrencyLogo'
+import Percent from 'views/Info/components/Percent'
 import { Arrow, Break, ClickableColumnHeader, PageButtons, TableWrapper } from './shared'
 
 /**
@@ -63,7 +58,7 @@ const ResponsiveGrid = styled.div`
 
 const LinkWrapper = styled(NextLinkFromReactRouter)`
   text-decoration: none;
-  :hover {
+  &:hover {
     cursor: pointer;
     opacity: 0.7;
   }
@@ -98,9 +93,14 @@ const TableLoader: React.FC<React.PropsWithChildren> = () => {
 
 const DataRow: React.FC<React.PropsWithChildren<{ tokenData: TokenData; index: number }>> = ({ tokenData, index }) => {
   const { isXs, isSm } = useMatchBreakpoints()
-  const chainName = useGetChainName()
   const chianPath = useMultiChainPath()
+  const chainName = useChainNameByQuery()
+  const chainId = multiChainId[chainName]
   const stableSwapPath = useStableSwapPath()
+
+  const tokenSymbol = getTokenSymbolAlias(tokenData.address, chainId, tokenData.symbol)
+  const tokenName = getTokenNameAlias(tokenData.address, chainId, tokenData.name)
+
   return (
     <LinkWrapper to={`/info${chianPath}/tokens/${tokenData.address}${stableSwapPath}`}>
       <ResponsiveGrid>
@@ -108,12 +108,12 @@ const DataRow: React.FC<React.PropsWithChildren<{ tokenData: TokenData; index: n
           <Text>{index + 1}</Text>
         </Flex>
         <Flex alignItems="center">
-          <ResponsiveLogo address={tokenData.address} chainName={chainName} />
+          <ResponsiveLogo size="24px" address={tokenData.address} chainName={chainName} />
           {(isXs || isSm) && <Text ml="8px">{tokenData.symbol}</Text>}
           {!isXs && !isSm && (
             <Flex marginLeft="10px">
-              <Text>{tokenData.name}</Text>
-              <Text ml="8px">({tokenData.symbol})</Text>
+              <Text>{tokenName}</Text>
+              <Text ml="8px">({tokenSymbol})</Text>
             </Flex>
           )}
         </Flex>
@@ -141,7 +141,7 @@ const MAX_ITEMS = 10
 
 const TokenTable: React.FC<
   React.PropsWithChildren<{
-    tokenDatas: TokenData[] | undefined
+    tokenDatas: (TokenData | undefined)[]
     maxItems?: number
   }>
 > = ({ tokenDatas, maxItems = MAX_ITEMS }) => {
@@ -165,7 +165,7 @@ const TokenTable: React.FC<
     return tokenDatas
       ? orderBy(
           tokenDatas,
-          (tokenData) => tokenData[sortField as keyof TokenData],
+          (tokenData) => tokenData?.[sortField as keyof TokenData],
           sortDirection ? 'desc' : 'asc',
         ).slice(maxItems * (page - 1), page * maxItems)
       : []

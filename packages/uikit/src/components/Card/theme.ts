@@ -1,4 +1,4 @@
-import { vars } from "@pancakeswap/ui/css/vars.css";
+import { vars } from "../../css/vars.css";
 import { darkColors, lightColors } from "../../theme/colors";
 import { CardTheme } from "./types";
 
@@ -13,6 +13,7 @@ export const light: CardTheme = {
     blue: lightColors.gradientBlue,
     bubblegum: lightColors.gradientBubblegum,
     violet: lightColors.gradientViolet,
+    pale: lightColors.card,
   },
   dropShadow: "drop-shadow(0px 1px 4px rgba(25, 19, 38, 0.15))",
 };
@@ -28,6 +29,7 @@ export const dark: CardTheme = {
     blue: darkColors.gradientBlue,
     bubblegum: lightColors.gradientBubblegum,
     violet: darkColors.gradientViolet,
+    pale: darkColors.card,
   },
   dropShadow: "drop-shadow(0px 1px 4px rgba(25, 19, 38, 0.15))",
 };

@@ -1,45 +1,64 @@
-import { TransactionResponse } from '@ethersproject/providers'
+import { Order } from '@gelatonetwork/limit-orders-lib'
+import isEmpty from 'lodash/isEmpty'
+import keyBy from 'lodash/keyBy'
+import mapValues from 'lodash/mapValues'
+import omitBy from 'lodash/omitBy'
+import orderBy from 'lodash/orderBy'
+import pickBy from 'lodash/pickBy'
 import { useCallback, useMemo } from 'react'
 import { useSelector } from 'react-redux'
-import { Order } from '@gelatonetwork/limit-orders-lib'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import pickBy from 'lodash/pickBy'
-import mapValues from 'lodash/mapValues'
-import keyBy from 'lodash/keyBy'
-import orderBy from 'lodash/orderBy'
-import omitBy from 'lodash/omitBy'
-import isEmpty from 'lodash/isEmpty'
+import { AppState, useAppDispatch } from 'state'
 import { useAccount } from 'wagmi'
+import { Hash } from 'viem'
+import { Token } from '@pancakeswap/swap-sdk-core'
+import { FeeAmount } from '@pancakeswap/v3-sdk'
+import { useTranslation } from '@pancakeswap/localization'
+
 import { useActiveChainId } from 'hooks/useActiveChainId'
-import { TransactionDetails } from './reducer'
+
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
+import { useSafeTxHashTransformer } from 'hooks/useSafeTxHashTransformer'
 import {
-  addTransaction,
-  TransactionType,
-  NonBscFarmTransactionType,
   FarmTransactionStatus,
-  NonBscFarmStepType,
+  CrossChainFarmStepType,
+  CrossChainFarmTransactionType,
+  TransactionType,
+  addTransaction,
 } from './actions'
-import { AppState, useAppDispatch } from '../index'
+import { TransactionDetails } from './reducer'
 
 // helper that can take a ethers library transaction response and add it to the list of transactions
 export function useTransactionAdder(): (
-  response: TransactionResponse,
+  response: { hash: Hash | string } | { transactionHash: Hash | string },
   customData?: {
     summary?: string
-    translatableSummary?: { text: string; data?: Record<string, string | number> }
-    approval?: { tokenAddress: string; spender: string }
+    translatableSummary?: { text: string; data?: Record<string, string | number | undefined> }
+    approval?: { tokenAddress: string; spender: string; amount: string }
     claim?: { recipient: string }
     type?: TransactionType
     order?: Order
-    nonBscFarm?: NonBscFarmTransactionType
+    crossChainFarm?: CrossChainFarmTransactionType
+    // add/remove pool
+    baseCurrencyId?: string
+    quoteCurrencyId?: string
+    expectedAmountBaseRaw?: string
+    expectedAmountQuoteRaw?: string
+    feeAmount?: FeeAmount
+    createPool?: boolean
+    // fee collect
+    currencyId0?: string
+    currencyId1?: string
+    expectedCurrencyOwed0?: string
+    expectedCurrencyOwed1?: string
   },
 ) => void {
-  const { chainId, account } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const dispatch = useAppDispatch()
+  const safeTxHashTransformer = useSafeTxHashTransformer()
 
   return useCallback(
-    (
-      response: TransactionResponse,
+    async (
+      response,
       {
         summary,
         translatableSummary,
@@ -47,24 +66,39 @@ export function useTransactionAdder(): (
         claim,
         type,
         order,
-        nonBscFarm,
+        crossChainFarm,
       }: {
         summary?: string
-        translatableSummary?: { text: string; data?: Record<string, string | number> }
+        translatableSummary?: { text: string; data?: Record<string, string | number | undefined> }
         claim?: { recipient: string }
         approval?: { tokenAddress: string; spender: string }
         type?: TransactionType
         order?: Order
-        nonBscFarm?: NonBscFarmTransactionType
+        crossChainFarm?: CrossChainFarmTransactionType
       } = {},
     ) => {
       if (!account) return
       if (!chainId) return
 
-      const { hash } = response
+      let hash: Hash | string | undefined
+
+      if ('hash' in response) {
+        // eslint-disable-next-line prefer-destructuring
+        hash = response.hash
+      } else if ('transactionHash' in response) {
+        hash = response.transactionHash
+      }
+
       if (!hash) {
         throw Error('No transaction hash found.')
       }
+
+      try {
+        hash = await safeTxHashTransformer(hash as Hash)
+      } catch (e) {
+        console.error('Failed to get transaction hash from Safe', e)
+      }
+
       dispatch(
         addTransaction({
           hash,
@@ -76,11 +110,11 @@ export function useTransactionAdder(): (
           claim,
           type,
           order,
-          nonBscFarm,
+          crossChainFarm,
         }),
       )
     },
-    [dispatch, chainId, account],
+    [account, chainId, safeTxHashTransformer, dispatch],
   )
 }
 
@@ -127,7 +161,7 @@ export function useAllActiveChainTransactions(): { [txHash: string]: Transaction
   return useAllChainTransactions(chainId)
 }
 
-export function useAllChainTransactions(chainId: number): { [txHash: string]: TransactionDetails } {
+export function useAllChainTransactions(chainId?: number): { [txHash: string]: TransactionDetails } {
   const { address: account } = useAccount()
 
   const state = useSelector<AppState, AppState['transactions']>((s) => s.transactions)
@@ -156,7 +190,7 @@ export function useIsTransactionPending(transactionHash?: string): boolean {
  * @param tx to check for recency
  */
 export function isTransactionRecent(tx: TransactionDetails): boolean {
-  return new Date().getTime() - tx.addedTime < 86_400_000
+  return Date.now() - tx.addedTime < 86_400_000
 }
 
 // returns whether a token has a pending approval transaction
@@ -180,21 +214,40 @@ export function useHasPendingApproval(tokenAddress: string | undefined, spender:
   )
 }
 
+export function useHasPendingRevocation(token?: Token, spender?: string) {
+  const allTransactions = useAllActiveChainTransactions()
+  const pendingApprovals = useMemo(() => {
+    if (typeof token?.address !== 'string' || typeof spender !== 'string') {
+      return undefined
+    }
+    // eslint-disable-next-line guard-for-in
+    for (const txHash in allTransactions) {
+      const tx = allTransactions[txHash]
+      if (!tx || tx.receipt || tx.type === 'approve' || !tx.approval) continue
+      if (tx.approval.spender === spender && tx.approval.tokenAddress === token.address && isTransactionRecent(tx)) {
+        return BigInt(tx.approval.amount ?? 0)
+      }
+    }
+    return undefined
+  }, [allTransactions, spender, token?.address])
+  return typeof pendingApprovals === 'bigint' && pendingApprovals === 0n
+}
+
 // we want the latest one to come first, so return negative if a is after b
 function newTransactionsFirst(a: TransactionDetails, b: TransactionDetails) {
   return b.addedTime - a.addedTime
 }
 
 // calculate pending transactions
-interface NonBscPendingData {
-  txid: string
-  lpAddress: string
-  type: NonBscFarmStepType
+interface CrossChainPendingData {
+  txid?: string
+  lpAddress?: string
+  type?: CrossChainFarmStepType
 }
 export function usePendingTransactions(): {
   hasPendingTransactions: boolean
   pendingNumber: number
-  nonBscFarmPendingList: NonBscPendingData[]
+  crossChainFarmPendingList: CrossChainPendingData[]
 } {
   const allTransactions = useAllTransactions()
   const sortedRecentTransactions = useMemo(() => {
@@ -203,24 +256,66 @@ export function usePendingTransactions(): {
   }, [allTransactions])
 
   const pending = sortedRecentTransactions
-    .filter((tx) => !tx.receipt || tx?.nonBscFarm?.status === FarmTransactionStatus.PENDING)
+    .filter((tx) => !tx.receipt || tx?.crossChainFarm?.status === FarmTransactionStatus.PENDING)
     .map((tx) => tx.hash)
   const hasPendingTransactions = !!pending.length
 
-  const nonBscFarmPendingList = sortedRecentTransactions
-    .filter((tx) => pending.includes(tx.hash) && !!tx.nonBscFarm)
-    .map((tx) => ({ txid: tx.hash, lpAddress: tx.nonBscFarm.lpAddress, type: tx.nonBscFarm.type }))
+  const crossChainFarmPendingList = sortedRecentTransactions
+    .filter((tx) => pending.includes(tx.hash) && !!tx.crossChainFarm)
+    .map((tx) => ({ txid: tx?.hash, lpAddress: tx?.crossChainFarm?.lpAddress, type: tx?.crossChainFarm?.type }))
 
   return {
     hasPendingTransactions,
-    nonBscFarmPendingList,
+    crossChainFarmPendingList,
     pendingNumber: pending.length,
   }
 }
 
-export function useNonBscFarmPendingTransaction(lpAddress: string): NonBscPendingData[] {
-  const { nonBscFarmPendingList } = usePendingTransactions()
+export function useCrossChainFarmPendingTransaction(lpAddress?: string): CrossChainPendingData[] {
+  const { crossChainFarmPendingList } = usePendingTransactions()
   return useMemo(() => {
-    return nonBscFarmPendingList.filter((tx) => tx.lpAddress.toLocaleLowerCase() === lpAddress.toLocaleLowerCase())
-  }, [lpAddress, nonBscFarmPendingList])
+    if (!lpAddress) return []
+    return crossChainFarmPendingList.filter((tx) => tx?.lpAddress?.toLowerCase() === lpAddress.toLowerCase())
+  }, [lpAddress, crossChainFarmPendingList])
+}
+
+export function useReadableTransactionType(type?: TransactionType) {
+  const { t } = useTranslation()
+  return useMemo(() => {
+    if (type === undefined) {
+      return t('PancakeSwap AMM')
+    }
+    switch (type) {
+      case 'approve':
+        return t('Token Approval')
+      case 'swap':
+        return t('PancakeSwap AMM')
+      case 'wrap':
+        return t('Wrap Native Token')
+      case 'add-liquidity':
+      case 'increase-liquidity-v3':
+      case 'add-liquidity-v3':
+      case 'zap-liquidity-v3':
+        return t('Add Liquidity')
+      case 'remove-liquidity':
+      case 'remove-liquidity-v3':
+        return t('Remove Liquidity')
+      case 'collect-fee':
+        return t('Collect Fee')
+      case 'limit-order-approval':
+      case 'limit-order-submission':
+      case 'limit-order-cancellation':
+        return t('Limit Order')
+      case 'cross-chain-farm':
+        return t('Farming')
+      case 'migrate-v3':
+        return t('Migration')
+      case 'bridge-icake':
+        return t('IFO')
+      case 'claim-liquid-staking':
+        return t('Liquid Staking')
+      default:
+        return type
+    }
+  }, [type, t])
 }

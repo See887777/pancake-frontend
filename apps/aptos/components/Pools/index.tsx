@@ -1,22 +1,26 @@
-import { useTranslation } from '@pancakeswap/localization'
-import { Flex, Heading, PageHeader, Pool, Text, FlexLayout } from '@pancakeswap/uikit'
 import { Coin } from '@pancakeswap/aptos-swap-sdk'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import styled from 'styled-components'
-
-import Page from 'components/Layout/Page'
-import { TokenPairImage } from 'components/TokenImage'
+import { useTranslation } from '@pancakeswap/localization'
+import { Flex, FlexLayout, Heading, PageHeader, Text, ViewMode } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
 import { ConnectWalletButton } from 'components/ConnectWalletButton'
-import { CAKE_PID } from 'config/constants'
-
+import { useCheckIsUserIpPass } from 'components/Farms/hooks/useCheckIsUserIpPass'
+import Page from 'components/Layout/Page'
+import { AptRewardTooltip } from 'components/Pools/components/PoolTable/AptRewardTooltip'
+import { UsUserAptRewardTooltips } from 'components/Pools/components/PoolTable/UsUserAptRewardTooltips'
+import { TokenPairImage } from 'components/TokenImage'
+import { APT } from 'config/coins'
+import useActiveWeb3React from 'hooks/useActiveWeb3React'
+import { styled } from 'styled-components'
 import NoSSR from '../NoSSR'
-import PoolControls from './components/PoolControls'
-import CardActions from './components/PoolCard/CardActions'
 import Apr from './components/PoolCard/Apr'
+import CakeCardActions from './components/PoolCard/CakeCardActions'
+import CardActions from './components/PoolCard/CardActions'
 import CardFooter from './components/PoolCard/CardFooter'
 import PoolStatsInfo from './components/PoolCard/PoolStatsInfo'
-import CakeCardActions from './components/PoolCard/CakeCardActions'
+import PoolControls from './components/PoolControls'
+import PoolRow from './components/PoolTable/PoolRow'
 import { usePoolsList } from './hooks/usePoolsList'
+import isVaultPool from './utils/isVaultPool'
 
 const CardLayout = styled(FlexLayout)`
   justify-content: center;
@@ -24,8 +28,9 @@ const CardLayout = styled(FlexLayout)`
 
 const PoolsPage: React.FC<React.PropsWithChildren> = () => {
   const { t } = useTranslation()
-  const { account, chainId } = useActiveWeb3React()
+  const { account } = useActiveWeb3React()
   const pools = usePoolsList()
+  const isUserIpPass = useCheckIsUserIpPass()
 
   return (
     <>
@@ -47,24 +52,35 @@ const PoolsPage: React.FC<React.PropsWithChildren> = () => {
       <Page title={t('Pools')}>
         <NoSSR>
           <PoolControls pools={pools}>
-            {({ chosenPools }) => {
-              return (
+            {({ chosenPools, viewMode, normalizedUrlSearch }) => {
+              return viewMode === ViewMode.CARD ? (
                 <CardLayout>
                   {chosenPools.map((pool: Pool.DeserializedPool<Coin>) => (
                     <Pool.PoolCard<Coin>
-                      key={pool.contractAddress[chainId]}
+                      key={pool.contractAddress}
                       pool={pool}
                       isStaked={Boolean(pool?.userData?.stakedBalance?.gt(0))}
                       cardContent={
                         account ? (
-                          pool?.sousId === CAKE_PID ? (
+                          isVaultPool() ? (
                             <CakeCardActions
                               hideLocateAddress
                               pool={pool}
                               stakedBalance={pool?.userData?.stakedBalance}
                             />
                           ) : (
-                            <CardActions hideLocateAddress pool={pool} stakedBalance={pool?.userData?.stakedBalance} />
+                            <CardActions
+                              hideLocateAddress
+                              pool={pool}
+                              stakedBalance={pool?.userData?.stakedBalance}
+                              usUserTooltipComponent={<UsUserAptRewardTooltips pool={pool} />}
+                              disabledHarvestButton={
+                                account &&
+                                !isUserIpPass &&
+                                pool.earningToken.address.toLowerCase() ===
+                                  APT[pool.earningToken.chainId].address.toLowerCase()
+                              }
+                            />
                           )
                         ) : (
                           <>
@@ -88,10 +104,27 @@ const PoolsPage: React.FC<React.PropsWithChildren> = () => {
                           <PoolStatsInfo account={account} pool={pool} />
                         </CardFooter>
                       }
-                      aprRow={<Apr pool={pool} stakedBalance={pool?.userData?.stakedBalance} showIcon={false} />}
+                      aprRow={
+                        <Pool.AprRowWithToolTip>
+                          <Apr pool={pool} stakedBalance={pool?.userData?.stakedBalance} showIcon={false} />
+                        </Pool.AprRowWithToolTip>
+                      }
+                      headerTooltipComponent={<AptRewardTooltip pool={pool} />}
                     />
                   ))}
                 </CardLayout>
+              ) : (
+                <Pool.PoolsTable>
+                  {chosenPools.map((pool) => (
+                    <PoolRow
+                      initialActivity={normalizedUrlSearch.toLowerCase() === pool.earningToken.symbol?.toLowerCase()}
+                      key={pool.contractAddress}
+                      sousId={pool.sousId}
+                      account={account}
+                      pool={pool}
+                    />
+                  ))}
+                </Pool.PoolsTable>
               )
             }}
           </PoolControls>

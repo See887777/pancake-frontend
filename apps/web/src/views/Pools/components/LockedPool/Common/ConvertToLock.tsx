@@ -9,12 +9,14 @@ import useAvgLockDuration from '../hooks/useAvgLockDuration'
 
 interface ConvertToLockProps {
   stakingToken: Token
+  stakingTokenPrice: number
   currentStakedAmount: number
   isInline?: boolean
 }
 
 const ConvertToLock: React.FC<React.PropsWithChildren<ConvertToLockProps>> = ({
   stakingToken,
+  stakingTokenPrice,
   currentStakedAmount,
   isInline,
 }) => {
@@ -28,12 +30,13 @@ const ConvertToLock: React.FC<React.PropsWithChildren<ConvertToLockProps>> = ({
     <Message
       variant="warning"
       action={
-        <Flex mt={!isTableView && '8px'} flexGrow={1} ml={isTableView && '80px'}>
+        <Flex mt={!isTableView ? '8px' : undefined} flexGrow={1} ml={isTableView ? '80px' : undefined}>
           <ExtendButton
             modalTitle={t('Convert to Lock')}
             lockEndTime="0"
             lockStartTime="0"
             stakingToken={stakingToken}
+            stakingTokenPrice={stakingTokenPrice}
             currentLockedAmount={currentStakedAmount}
           >
             {t('Convert to Lock')}
@@ -42,11 +45,13 @@ const ConvertToLock: React.FC<React.PropsWithChildren<ConvertToLockProps>> = ({
       }
       actionInline={isTableView}
     >
-      <MessageText>
-        {t('Lock staking users are earning an average of %amount%% APY. More benefits are coming soon.', {
-          amount: lockedApy ? parseFloat(lockedApy).toFixed(2) : 0,
-        })}
-      </MessageText>
+      {!!(avgLockDurationsInSeconds && lockedApy) && (
+        <MessageText>
+          {t('Lock staking users are earning an average of %amount%% APR. More benefits are coming soon.', {
+            amount: lockedApy ? parseFloat(lockedApy).toFixed(2) : 0,
+          })}
+        </MessageText>
+      )}
     </Message>
   )
 }

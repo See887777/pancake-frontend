@@ -1,72 +1,76 @@
-import { useState } from "react";
-import { CopyIcon, SvgProps } from "@pancakeswap/uikit";
-import styled from "styled-components";
+import { useTranslation } from "@pancakeswap/localization";
+import { ElementType, useCallback, useEffect, useState } from "react";
+import { TooltipOptions, useTooltip } from "../../hooks";
+import { IconButton } from "../Button";
+import { CopyIcon, SvgProps } from "../Svg";
 import { copyText } from "./copyText";
-
-const Tooltip = styled.div<{
-  isTooltipDisplayed: boolean;
-  tooltipTop: number;
-  tooltipRight?: number;
-  tooltipFontSize?: number;
-}>`
-  display: ${({ isTooltipDisplayed }) => (isTooltipDisplayed ? "inline" : "none")};
-  position: absolute;
-  padding: 8px;
-  top: ${({ tooltipTop }) => `${tooltipTop}px`};
-  right: ${({ tooltipRight }) => (tooltipRight ? `${tooltipRight}px` : 0)};
-  text-align: center;
-  font-size: ${({ tooltipFontSize }) => `${tooltipFontSize}px` ?? "100%"};
-  background-color: ${({ theme }) => theme.colors.contrast};
-  color: ${({ theme }) => theme.colors.invertedContrast};
-  border-radius: 16px;
-  opacity: 0.7;
-  width: max-content;
-`;
 
 interface CopyButtonProps extends SvgProps {
   text: string;
   tooltipMessage: string;
-  tooltipTop: number;
-  tooltipRight?: number;
-  tooltipFontSize?: number;
+  defaultTooltipMessage?: string;
+  tooltipPlacement?: TooltipOptions["placement"];
   buttonColor?: string;
+  icon?: ElementType;
 }
 
 export const CopyButton: React.FC<React.PropsWithChildren<CopyButtonProps>> = ({
   text,
   tooltipMessage,
+  defaultTooltipMessage,
   width,
-  tooltipTop,
-  tooltipRight,
-  tooltipFontSize,
   buttonColor = "primary",
+  tooltipPlacement = "auto",
+  icon: Icon = CopyIcon,
   ...props
 }) => {
+  const { t } = useTranslation();
   const [isTooltipDisplayed, setIsTooltipDisplayed] = useState(false);
 
-  const displayTooltip = () => {
+  const { targetRef, tooltip, tooltipVisible } = useTooltip(
+    isTooltipDisplayed ? tooltipMessage : defaultTooltipMessage,
+    {
+      placement: tooltipPlacement,
+      manualVisible: !defaultTooltipMessage,
+      trigger: "hover",
+    }
+  );
+
+  const showToolTip = defaultTooltipMessage ? tooltipVisible : isTooltipDisplayed;
+
+  const displayTooltip = useCallback(() => {
     setIsTooltipDisplayed(true);
-    setTimeout(() => {
-      setIsTooltipDisplayed(false);
-    }, 1000);
-  };
+  }, []);
+
+  const handleOnClick = useCallback(() => {
+    copyText(text, displayTooltip);
+  }, [text, displayTooltip]);
+
+  useEffect(() => {
+    if (isTooltipDisplayed) {
+      const tooltipTimeout = setTimeout(() => {
+        setIsTooltipDisplayed(false);
+      }, 1000);
+      return () => clearTimeout(tooltipTimeout);
+    }
+
+    return undefined;
+  }, [isTooltipDisplayed]);
+
   return (
     <>
-      <CopyIcon
-        style={{ cursor: "pointer" }}
-        color={buttonColor}
-        width={width}
-        onClick={() => copyText(text, displayTooltip)}
-        {...props}
-      />
-      <Tooltip
-        isTooltipDisplayed={isTooltipDisplayed}
-        tooltipTop={tooltipTop}
-        tooltipRight={tooltipRight}
-        tooltipFontSize={tooltipFontSize}
-      >
-        {tooltipMessage}
-      </Tooltip>
+      <div ref={targetRef}>
+        <IconButton
+          title={t("Copy")}
+          onClick={handleOnClick}
+          scale="sm"
+          variant="text"
+          style={{ width: "auto", position: "relative" }}
+        >
+          <Icon color={buttonColor} width={width} {...props} />
+        </IconButton>
+      </div>
+      {showToolTip && tooltip}
     </>
   );
 };

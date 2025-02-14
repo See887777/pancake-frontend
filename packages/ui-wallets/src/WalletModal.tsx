@@ -1,7 +1,7 @@
 import { usePreloadImages } from '@pancakeswap/hooks'
 import { useTranslation } from '@pancakeswap/localization'
-import { AtomBox } from '@pancakeswap/ui/components/AtomBox'
 import {
+  AtomBox,
   Button,
   Heading,
   Image,
@@ -17,16 +17,17 @@ import {
   WarningIcon,
 } from '@pancakeswap/uikit'
 import { atom, useAtom } from 'jotai'
-import { FC, lazy, PropsWithChildren, Suspense, useMemo, useState } from 'react'
+import { PropsWithChildren, Suspense, lazy, useMemo, useState } from 'react'
 import { isMobile } from 'react-device-detect'
-import { StepIntro } from './components/Intro'
 import {
   desktopWalletSelectionClass,
   modalWrapperClass,
-  walletIconClass,
   promotedGradientClass,
+  walletIconClass,
   walletSelectWrapperClass,
 } from './WalletModal.css'
+
+const StepIntro = lazy(() => import('./components/Intro'))
 
 const Qrcode = lazy(() => import('./components/QRCode'))
 
@@ -42,7 +43,7 @@ type LinkOfDevice = string | DeviceLink
 export type WalletConfigV2<T = unknown> = {
   id: string
   title: string
-  icon: string | FC<React.PropsWithChildren<SvgProps>>
+  icon: string | React.FC<React.PropsWithChildren<SvgProps>>
   connectorId: T
   deepLink?: string
   installed?: boolean
@@ -50,6 +51,7 @@ export type WalletConfigV2<T = unknown> = {
   downloadLink?: LinkOfDevice
   mobileOnly?: boolean
   qrCode?: () => Promise<string>
+  isNotExtension?: boolean
 }
 
 interface WalletModalV2Props<T = unknown> extends ModalV2Props {
@@ -57,6 +59,7 @@ interface WalletModalV2Props<T = unknown> extends ModalV2Props {
   login: (connectorId: T) => Promise<any>
   docLink: string
   docText: string
+  onWalletConnectCallBack?: (walletTitle?: string) => void
 }
 
 export class WalletConnectorNotFoundError extends Error {}
@@ -79,7 +82,7 @@ const TabContainer = ({ children, docLink, docText }: PropsWithChildren<{ docLin
   return (
     <AtomBox position="relative" zIndex="modal" className={modalWrapperClass}>
       <AtomBox position="absolute" style={{ top: '-50px' }}>
-        <TabMenu activeIndex={index} onItemClick={setIndex} gap="0px" isColorInverse>
+        <TabMenu activeIndex={index} onItemClick={setIndex} gap="0px" isColorInverse isShowBorderBottom={false}>
           <Tab>{t('Connect Wallet')}</Tab>
           <Tab>{t('What’s a Web3 Wallet?')}</Tab>
         </TabMenu>
@@ -94,16 +97,20 @@ const TabContainer = ({ children, docLink, docText }: PropsWithChildren<{ docLin
           md: 'card',
         }}
         zIndex="modal"
-        width="full"
+        width="100%"
       >
         {index === 0 && children}
-        {index === 1 && <StepIntro docLink={docLink} docText={docText} />}
+        {index === 1 && (
+          <Suspense>
+            <StepIntro docLink={docLink} docText={docText} />
+          </Suspense>
+        )}
       </AtomBox>
     </AtomBox>
   )
 }
 
-const MOBILE_DEFAULT_DISPLAY_COUNT = 6
+const MOBILE_DEFAULT_DISPLAY_COUNT = 8
 
 function MobileModal<T>({
   wallets,
@@ -127,7 +134,7 @@ function MobileModal<T>({
   })
 
   return (
-    <AtomBox width="full">
+    <AtomBox width="100%">
       {error ? (
         <AtomBox
           display="flex"
@@ -156,7 +163,7 @@ function MobileModal<T>({
           onClick={(wallet) => {
             connectWallet(wallet)
             if (wallet.deepLink && wallet.installed === false) {
-              window.open(wallet.deepLink)
+              window.open(wallet.deepLink, '_blank', 'noopener noreferrer')
             }
           }}
         />
@@ -178,7 +185,7 @@ function MobileModal<T>({
 function WalletSelect<T>({
   wallets,
   onClick,
-  displayCount = 5,
+  displayCount = 9,
 }: {
   wallets: WalletConfigV2<T>[]
   onClick: (wallet: WalletConfigV2<T>) => void
@@ -186,7 +193,8 @@ function WalletSelect<T>({
 }) {
   const { t } = useTranslation()
   const [showMore, setShowMore] = useState(false)
-  const walletsToShow = showMore ? wallets : wallets.slice(0, displayCount)
+  const walletDisplayCount = wallets.length > displayCount ? displayCount - 1 : displayCount
+  const walletsToShow = showMore ? wallets : wallets.slice(0, walletDisplayCount)
   const [selected] = useSelectedWallet()
   return (
     <AtomBox
@@ -222,6 +230,7 @@ function WalletSelect<T>({
                 alignItems="center"
                 className={walletIconClass}
                 style={{ borderRadius: '13px' }}
+                overflow="hidden"
               >
                 {isImage ? (
                   <Image src={Icon as string} width={50} height={50} />
@@ -229,7 +238,7 @@ function WalletSelect<T>({
                   <Icon width={24} height={24} color="textSubtle" />
                 )}
                 {wallet.id === selected?.id && (
-                  <AtomBox position="absolute" inset="0" bgc="secondary" opacity="0.5" borderRadius="12px" />
+                  <AtomBox position="absolute" inset="0px" bgc="secondary" opacity="0.5" borderRadius="12px" />
                 )}
               </AtomBox>
             </AtomBox>
@@ -239,7 +248,7 @@ function WalletSelect<T>({
           </Button>
         )
       })}
-      {!showMore && wallets.length > displayCount && (
+      {!showMore && wallets.length > walletDisplayCount && (
         <AtomBox display="flex" justifyContent="center" alignItems="center" flexDirection="column">
           <Button height="auto" variant="text" as={AtomBox} flexDirection="column" onClick={() => setShowMore(true)}>
             <AtomBox
@@ -334,9 +343,14 @@ function DesktopModal<T>({
             connectToWallet(w)
             setQrCode(undefined)
             if (w.qrCode) {
-              w.qrCode().then((uri) => {
-                setQrCode(uri)
-              })
+              w.qrCode().then(
+                (uri) => {
+                  setQrCode(uri)
+                },
+                () => {
+                  // do nothing.
+                },
+              )
             }
           }}
         />
@@ -375,7 +389,7 @@ function DesktopModal<T>({
 }
 
 export function WalletModalV2<T = unknown>(props: WalletModalV2Props<T>) {
-  const { wallets: _wallets, login, docLink, docText, ...rest } = props
+  const { wallets: _wallets, login, docLink, docText, onWalletConnectCallBack, ...rest } = props
 
   const [lastUsedWalletName] = useAtom(lastUsedWalletNameAtom)
 
@@ -403,6 +417,11 @@ export function WalletModalV2<T = unknown>(props: WalletModalV2Props<T>) {
         .then((v) => {
           if (v) {
             localStorage.setItem(walletLocalStorageKey, wallet.title)
+            try {
+              onWalletConnectCallBack?.(wallet.title)
+            } catch (e) {
+              console.error(wallet.title, e)
+            }
           }
         })
         .catch((err) => {
@@ -418,7 +437,7 @@ export function WalletModalV2<T = unknown>(props: WalletModalV2Props<T>) {
   }
 
   return (
-    <ModalV2 closeOnOverlayClick {...rest}>
+    <ModalV2 closeOnOverlayClick disableOutsidePointerEvents={false} {...rest}>
       <ModalWrapper onDismiss={props.onDismiss} style={{ overflow: 'visible', border: 'none' }}>
         <AtomBox position="relative">
           <TabContainer docLink={docLink} docText={docText}>
@@ -463,7 +482,7 @@ const NotInstalled = ({ wallet, qrCode }: { wallet: WalletConfigV2; qrCode?: str
           </AtomBox>
         </Suspense>
       )}
-      {!qrCode && (
+      {!qrCode && !wallet.isNotExtension && (
         <Text maxWidth="246px" m="auto">
           {t('Please install the %wallet% browser extension to connect the %wallet% wallet.', {
             wallet: wallet.title,

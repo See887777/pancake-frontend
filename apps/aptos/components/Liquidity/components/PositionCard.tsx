@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
-import { JSBI, Percent } from '@pancakeswap/swap-sdk-core'
-import styled from 'styled-components'
+import { Percent } from '@pancakeswap/swap-sdk-core'
+import { styled } from 'styled-components'
 import { useTranslation } from '@pancakeswap/localization'
 import { Pair, Currency, CurrencyAmount } from '@pancakeswap/aptos-swap-sdk'
 import { CurrencyLogo, DoubleCurrencyLogo } from 'components/Logo'
@@ -20,17 +20,18 @@ import {
   RowFixed,
   Button,
   AddIcon,
-} from '@pancakeswap/uikit/src/components'
+  useTooltip,
+} from '@pancakeswap/uikit'
 
-import { useTooltip } from '@pancakeswap/uikit/src/hooks'
-import { NextLinkFromReactRouter } from '@pancakeswap/uikit/src/components/NextLink'
+import { NextLinkFromReactRouter } from '@pancakeswap/widgets-internal'
+
 import formatAmountDisplay from 'utils/formatAmountDisplay'
 
 const FixedHeightRow = styled(RowBetween)`
   height: 24px;
 `
 
-export const BIG_INT_ZERO = JSBI.BigInt(0)
+export const BIG_INT_ZERO = 0n
 
 export const LightCard = styled(Card)`
   border: 1px solid ${({ theme }) => theme.colors.cardBorder};
@@ -74,7 +75,7 @@ function MinimalPositionCardView({
 
   return (
     <>
-      {userPoolBalance && JSBI.greaterThan(userPoolBalance.quotient, BIG_INT_ZERO) ? (
+      {userPoolBalance && userPoolBalance.quotient > BIG_INT_ZERO ? (
         <Card>
           <CardBody>
             <AutoColumn gap="16px">
@@ -116,7 +117,7 @@ function MinimalPositionCardView({
                 )}
                 <FixedHeightRow>
                   <Text color="textSubtle" small>
-                    {t('Share of Pool')}:
+                    {t('Share in Trading Pair')}:
                   </Text>
                   <Text>{poolTokenPercentage ? `${poolTokenPercentage.toFixed(6)}%` : '-'}</Text>
                 </FixedHeightRow>
@@ -155,7 +156,7 @@ function MinimalPositionCardView({
               🥞
             </span>{' '}
             {t(
-              "By adding liquidity you'll earn 0.17% of all trades on this pair proportional to your share of the pool. Fees are added to the pool, accrue in real time and can be claimed by withdrawing your liquidity.",
+              "By adding liquidity you'll earn 0.17% of all trades on this pair proportional to your share in the trading pair. Fees are added to the pair, accrue in real time and can be claimed by withdrawing your liquidity.",
             )}
           </Text>
         </LightCard>
@@ -255,7 +256,7 @@ function FullPositionCardView({
           )}
 
           <FixedHeightRow>
-            <Text color="textSubtle">{t('Share of Pool')}</Text>
+            <Text color="textSubtle">{t('Share in Trading Pair')}</Text>
             <Text>
               {poolTokenPercentage
                 ? `${poolTokenPercentage.toFixed(2) === '0.00' ? '<0.01' : poolTokenPercentage.toFixed(2)}%`
@@ -263,7 +264,7 @@ function FullPositionCardView({
             </Text>
           </FixedHeightRow>
 
-          {userPoolBalance && JSBI.greaterThan(userPoolBalance.quotient, BIG_INT_ZERO) && (
+          {userPoolBalance && userPoolBalance.quotient > BIG_INT_ZERO && (
             <Flex flexDirection="column">
               <Button as={NextLinkFromReactRouter} to={removeTo} variant="primary" width="100%" mb="8px">
                 {t('Remove')}

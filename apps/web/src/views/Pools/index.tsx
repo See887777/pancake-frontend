@@ -1,20 +1,25 @@
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 
-import { useAccount } from 'wagmi'
-import { Heading, Flex, Image, Text, Link, FlexLayout, PageHeader, Loading, Pool, ViewMode } from '@pancakeswap/uikit'
+import { ChainId } from '@pancakeswap/chains'
 import { useTranslation } from '@pancakeswap/localization'
-import { usePoolsPageFetch, usePoolsWithVault } from 'state/pools/hooks'
-import Page from 'components/Layout/Page'
-import ConnectWalletButton from 'components/ConnectWalletButton'
+import { checkIsBoostedPool } from '@pancakeswap/pools'
 import { Token } from '@pancakeswap/sdk'
+import { Flex, FlexLayout, Heading, Image, Link, Loading, PageHeader, Text, ViewMode } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
+import ConnectWalletButton from 'components/ConnectWalletButton'
+import Page from 'components/Layout/Page'
 import { TokenPairImage } from 'components/TokenImage'
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { usePoolsPageFetch, usePoolsWithVault } from 'state/pools/hooks'
+import { useAccount } from 'wagmi'
 
-import CardActions from './components/PoolCard/CardActions'
-import AprRow from './components/PoolCard/AprRow'
-import CardFooter from './components/PoolCard/CardFooter'
 import CakeVaultCard from './components/CakeVaultCard'
+import AprRow from './components/PoolCard/AprRow'
+import CardActions from './components/PoolCard/CardActions'
+import CardFooter from './components/PoolCard/CardFooter'
 import PoolControls from './components/PoolControls'
 import PoolRow, { VaultPoolRow } from './components/PoolsTable/PoolRow'
+import { VeCakeFourYearCard } from './components/VeCakeFourYearCard'
 
 const CardLayout = styled(FlexLayout)`
   justify-content: center;
@@ -37,6 +42,7 @@ const FinishedTextLink = styled(Link)`
 const Pools: React.FC<React.PropsWithChildren> = () => {
   const { t } = useTranslation()
   const { address: account } = useAccount()
+  const { chainId } = useActiveChainId()
   const { pools, userDataLoaded } = usePoolsWithVault()
 
   usePoolsPageFetch()
@@ -56,18 +62,23 @@ const Pools: React.FC<React.PropsWithChildren> = () => {
               {t('High APR, low risk.')}
             </Heading>
           </Flex>
+          <VeCakeFourYearCard />
         </Flex>
       </PageHeader>
       <Page>
         <PoolControls pools={pools}>
           {({ chosenPools, viewMode, stakedOnly, normalizedUrlSearch, showFinishedPools }) => (
             <>
-              {showFinishedPools && (
+              {showFinishedPools && chainId === ChainId.BSC && (
                 <FinishedTextContainer>
                   <Text fontSize={['16px', null, '20px']} color="failure" pr="4px">
                     {t('Looking for v1 CAKE syrup pools?')}
                   </Text>
-                  <FinishedTextLink href="/migration" fontSize={['16px', null, '20px']} color="failure">
+                  <FinishedTextLink
+                    href="https://v1-farms.pancakeswap.finance/pools/history"
+                    fontSize={['16px', null, '20px']}
+                    color="failure"
+                  >
                     {t('Go to migration page')}.
                   </FinishedTextLink>
                 </FinishedTextContainer>
@@ -86,6 +97,7 @@ const Pools: React.FC<React.PropsWithChildren> = () => {
                       <Pool.PoolCard<Token>
                         key={pool.sousId}
                         pool={pool}
+                        isBoostedPool={Boolean(chainId && checkIsBoostedPool(pool.contractAddress, chainId))}
                         isStaked={Boolean(pool?.userData?.stakedBalance?.gt(0))}
                         cardContent={
                           account ? (
@@ -107,7 +119,7 @@ const Pools: React.FC<React.PropsWithChildren> = () => {
                             height={64}
                           />
                         }
-                        cardFooter={<CardFooter pool={pool} account={account} />}
+                        cardFooter={<CardFooter pool={pool} account={account ?? ''} />}
                         aprRow={<AprRow pool={pool} stakedBalance={pool?.userData?.stakedBalance} />}
                       />
                     ),
@@ -121,14 +133,14 @@ const Pools: React.FC<React.PropsWithChildren> = () => {
                         initialActivity={normalizedUrlSearch.toLowerCase() === pool.earningToken.symbol?.toLowerCase()}
                         key={pool.vaultKey}
                         vaultKey={pool.vaultKey}
-                        account={account}
+                        account={account ?? ''}
                       />
                     ) : (
                       <PoolRow
                         initialActivity={normalizedUrlSearch.toLowerCase() === pool.earningToken.symbol?.toLowerCase()}
                         key={pool.sousId}
                         sousId={pool.sousId}
-                        account={account}
+                        account={account ?? ''}
                       />
                     ),
                   )}

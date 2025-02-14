@@ -1,7 +1,8 @@
 import { Box, Flex, SkeletonV2, Text, ProfileAvatar } from '@pancakeswap/uikit'
 import { useProfileForAddress } from 'state/profile/hooks'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import truncateHash from '@pancakeswap/utils/truncateHash'
+import { useDomainNameForAddress } from 'hooks/useDomain'
 import { localiseTradingVolume } from '../../../helpers'
 import { LeaderboardDataItem } from '../../../types'
 
@@ -85,7 +86,8 @@ const GridItem: React.FC<
   React.PropsWithChildren<{ traderData?: LeaderboardDataItem; teamImages: React.ReactNode[] }>
 > = ({ traderData = { address: '', volume: 0, teamId: 0, rank: 0 }, teamImages }) => {
   const { address, volume, teamId, rank } = traderData
-  const { profile, isFetching } = useProfileForAddress(address)
+  const { profile, isFetching } = useProfileForAddress(address || '')
+  const { domainName, avatar } = useDomainNameForAddress(address)
 
   return (
     <Wrapper>
@@ -94,22 +96,29 @@ const GridItem: React.FC<
           #{rank}
         </Text>
         <SkeletonV2 width="24px" height="24px" ml={['16px', null, '16px']} borderRadius="50%" isDataReady={!isFetching}>
-          <ProfileAvatar src={profile?.nft?.image?.thumbnail} width={32} height={32} mr={['4px', null, '12px']} />
+          <ProfileAvatar
+            src={profile?.nft?.image?.thumbnail ?? avatar}
+            width={32}
+            height={32}
+            mr={['4px', null, '12px']}
+          />
         </SkeletonV2>
       </Flex>
       <VolumeAddressWrapper>
         <Flex alignItems="center" justifyContent="flex-start">
           <VolumeText fontSize="12px" bold>
-            ${localiseTradingVolume(volume)}
+            ${localiseTradingVolume(volume || 0)}
           </VolumeText>
         </Flex>
         <Flex alignItems="center" justifyContent="flex-start">
           <Text color="primary" fontSize="12px">
-            {truncateHash(address)}
+            {domainName || truncateHash(address || '')}
           </Text>
         </Flex>
       </VolumeAddressWrapper>
-      <TeamImageWrapper justifyContent="flex-end">{teamImages[teamId - 1]}</TeamImageWrapper>
+      <TeamImageWrapper justifyContent="flex-end">
+        {teamId !== undefined ? teamImages[teamId - 1] : null}
+      </TeamImageWrapper>
     </Wrapper>
   )
 }

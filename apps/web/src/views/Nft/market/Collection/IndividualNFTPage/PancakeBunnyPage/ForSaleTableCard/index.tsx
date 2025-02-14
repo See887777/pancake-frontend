@@ -1,28 +1,27 @@
-import { useCallback, useEffect, useState, useMemo } from 'react'
-import styled from 'styled-components'
-import chunk from 'lodash/chunk'
-import BigNumber from 'bignumber.js'
+import { useTranslation } from '@pancakeswap/localization'
 import {
-  Flex,
-  Card,
-  Grid,
-  SellIcon,
-  Text,
-  ArrowBackIcon,
-  ArrowForwardIcon,
-  ArrowUpIcon,
   ArrowDownIcon,
+  ArrowUpIcon,
+  Card,
+  Flex,
+  Grid,
+  PaginationButton,
+  SellIcon,
   Spinner,
+  Text,
   useMatchBreakpoints,
 } from '@pancakeswap/uikit'
-import { useTranslation } from '@pancakeswap/localization'
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
+import BigNumber from 'bignumber.js'
 import useTheme from 'hooks/useTheme'
-import { ApiResponseCollectionTokens } from 'state/nftMarket/types'
-import ForSaleTableRows from './ForSaleTableRows'
-import { StyledSortButton, TableHeading } from '../../shared/styles'
-import UpdateIndicator from './UpdateIndicator'
-import { Arrow, PageButtons } from '../../../../components/PaginationButtons'
+import chunk from 'lodash/chunk'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ApiResponseCollectionTokens, NftToken } from 'state/nftMarket/types'
+import { styled } from 'styled-components'
 import { usePancakeBunnyOnSaleNfts } from '../../../../hooks/usePancakeBunnyOnSaleNfts'
+import { StyledSortButton, TableHeading } from '../../shared/styles'
+import ForSaleTableRows from './ForSaleTableRows'
+import UpdateIndicator from './UpdateIndicator'
 
 const ITEMS_PER_PAGE_DESKTOP = 10
 const ITEMS_PER_PAGE_MOBILE = 5
@@ -41,7 +40,7 @@ const StyledCard = styled(Card)<{ hasManyPages: boolean }>`
 
 interface ForSaleTableCardProps {
   bunnyId: string
-  nftMetadata: ApiResponseCollectionTokens
+  nftMetadata: ApiResponseCollectionTokens | null
   onSuccessSale: () => void
 }
 
@@ -58,7 +57,7 @@ const ForSaleTableCard: React.FC<React.PropsWithChildren<ForSaleTableCardProps>>
     nfts,
     refresh,
     page,
-    setPage,
+    fetchNextPage,
     direction: priceSort,
     setDirection,
     isFetchingNfts,
@@ -80,8 +79,8 @@ const ForSaleTableCard: React.FC<React.PropsWithChildren<ForSaleTableCardProps>>
   const totalNfts = useMemo(() => {
     return nfts
       ? nfts.flat().sort((nftA, nftB) => {
-          const priceA = new BigNumber(nftA.marketData.currentAskPrice)
-          const priceB = new BigNumber(nftB.marketData.currentAskPrice)
+          const priceA = nftA.marketData?.currentAskPrice ? new BigNumber(nftA.marketData.currentAskPrice) : BIG_ZERO
+          const priceB = nftB.marketData?.currentAskPrice ? new BigNumber(nftB.marketData.currentAskPrice) : BIG_ZERO
           return priceA.gt(priceB)
             ? 1 * (priceSort === 'desc' ? -1 : 1)
             : priceA.eq(priceB)
@@ -102,9 +101,9 @@ const ForSaleTableCard: React.FC<React.PropsWithChildren<ForSaleTableCardProps>>
 
   useEffect(() => {
     if (maxInternalPage === internalPage && !isValidating && !isLastPage) {
-      setPage(page + 1)
+      fetchNextPage()
     }
-  }, [internalPage, isLastPage, isValidating, maxInternalPage, page, setPage])
+  }, [internalPage, isLastPage, isValidating, maxInternalPage, page, fetchNextPage])
 
   useEffect(() => {
     setInternalPage(1)
@@ -115,7 +114,7 @@ const ForSaleTableCard: React.FC<React.PropsWithChildren<ForSaleTableCardProps>>
     if (nfts && !isValidating && maxInternalPage < internalPage) {
       setInternalPage(maxInternalPage)
     }
-  }, [nfts, page, setPage, isValidating, maxInternalPage, internalPage])
+  }, [nfts, page, isValidating, maxInternalPage, internalPage])
 
   return (
     <StyledCard hasManyPages>
@@ -148,29 +147,13 @@ const ForSaleTableCard: React.FC<React.PropsWithChildren<ForSaleTableCardProps>>
         <>
           <Flex flex="1 1 auto" flexDirection="column" justifyContent="space-between" height="100%">
             <ForSaleTableRows
-              nftsForSale={nftsOnCurrentPage}
+              nftsForSale={nftsOnCurrentPage as NftToken[]}
               onSuccessSale={() => {
                 refresh()
                 onSuccessSale?.()
               }}
             />
-            <PageButtons>
-              <Arrow
-                onClick={() => {
-                  switchPage(internalPage === 1 ? internalPage : internalPage - 1)
-                }}
-              >
-                <ArrowBackIcon color={internalPage === 1 ? 'textDisabled' : 'primary'} />
-              </Arrow>
-              <Text>{t('Page %page%', { page: internalPage })}</Text>
-              <Arrow
-                onClick={() => {
-                  switchPage(internalPage === maxInternalPage ? internalPage : internalPage + 1)
-                }}
-              >
-                <ArrowForwardIcon color={internalPage === maxInternalPage ? 'textDisabled' : 'primary'} />
-              </Arrow>
-            </PageButtons>
+            <PaginationButton currentPage={internalPage} maxPage={maxInternalPage} setCurrentPage={switchPage} />
           </Flex>
         </>
       ) : isFetchingNfts ? (

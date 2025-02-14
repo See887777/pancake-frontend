@@ -1,11 +1,11 @@
 import { useTranslation } from '@pancakeswap/localization'
 import { Button, useModal, useToast } from '@pancakeswap/uikit'
 import { ToastDescriptionWithTx } from 'components/Toast'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
 import useCatchTxError from 'hooks/useCatchTxError'
 import { useERC20 } from 'hooks/useContract'
 import { useAppDispatch } from 'state'
 
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
 import { fetchFarmUserDataAsync } from 'state/farms'
 import { useFarmFromPid, useFarmUser } from 'state/farms/hooks'
 import useUnstakeFarms from '../../../hooks/useUnstakeFarms'
@@ -19,10 +19,10 @@ const MigrateActionButton: React.FunctionComponent<MigrateActionButtonPropsType>
   const { t } = useTranslation()
   const { toastSuccess } = useToast()
   const { fetchWithCatchTxError } = useCatchTxError()
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const { onUnstake } = useUnstakeFarms(pid)
   const { stakedBalance } = useFarmUser(pid)
-  const { lpAddress } = useFarmFromPid(pid)
+  const { lpAddress } = useFarmFromPid(pid) ?? {}
   const lpContract = useERC20(lpAddress)
   const dispatch = useAppDispatch()
 
@@ -38,7 +38,9 @@ const MigrateActionButton: React.FunctionComponent<MigrateActionButtonPropsType>
         </ToastDescriptionWithTx>,
       )
       callback()
-      dispatch(fetchFarmUserDataAsync({ account, pids: [pid], chainId }))
+      if (account && chainId) {
+        dispatch(fetchFarmUserDataAsync({ account, pids: [pid], chainId }))
+      }
     }
   }
 

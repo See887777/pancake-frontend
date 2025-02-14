@@ -1,81 +1,113 @@
 import { FAST_INTERVAL, SLOW_INTERVAL } from 'config/constants'
-// eslint-disable-next-line camelcase
-import useSWR, { useSWRConfig, unstable_serialize } from 'swr'
-import useSWRImmutable from 'swr/immutable'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { useProvider } from 'wagmi'
-import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useBlockNumber as useWagmiBlockNumber, useBlock as useWagmiBlock } from 'wagmi'
+import {
+  useWatchBlock,
+  useBlockNumber,
+  useBlockTimestamp,
+  useInitialBlockNumber,
+  useInitialBlockTimestamp as useInitBlockTimestamp,
+  getInitialBlockTimestampQueryKey,
+} from '@pancakeswap/wagmi'
 
-const REFRESH_BLOCK_INTERVAL = 6000
+import { useActiveChainId } from 'hooks/useActiveChainId'
+import { useCallback } from 'react'
 
 export const usePollBlockNumber = () => {
-  const { cache, mutate } = useSWRConfig()
-  const { chainId, provider } = useActiveWeb3React()
+  const { chainId } = useActiveChainId()
 
-  const { data } = useSWR(
-    chainId && ['blockNumberFetcher', chainId],
-    async () => {
-      const blockNumber = await provider.getBlockNumber()
-      mutate(['blockNumber', chainId], blockNumber)
-      if (!cache.get(unstable_serialize(['initialBlockNumber', chainId]))) {
-        mutate(['initialBlockNumber', chainId], blockNumber)
-      }
-      return blockNumber
-    },
-    {
-      refreshInterval: REFRESH_BLOCK_INTERVAL,
-    },
-  )
+  useWatchBlock({
+    chainId,
+    enabled: true,
+  })
 
-  useSWR(
-    chainId && [FAST_INTERVAL, 'blockNumber', chainId],
-    async () => {
-      return data
-    },
-    {
-      refreshInterval: FAST_INTERVAL,
-    },
-  )
+  const { data: blockNumber } = useBlockNumber({
+    chainId,
+    watch: true,
+  })
 
-  useSWR(
-    chainId && [SLOW_INTERVAL, 'blockNumber', chainId],
-    async () => {
-      return data
-    },
-    {
-      refreshInterval: SLOW_INTERVAL,
-    },
-  )
+  useQuery({
+    queryKey: [FAST_INTERVAL, 'blockNumber', chainId],
+    queryFn: async () => Number(blockNumber),
+    enabled: Boolean(chainId),
+    refetchInterval: FAST_INTERVAL,
+  })
+
+  useQuery({
+    queryKey: [SLOW_INTERVAL, 'blockNumber', chainId],
+    queryFn: async () => Number(blockNumber),
+    enabled: Boolean(chainId),
+    refetchInterval: SLOW_INTERVAL,
+  })
 }
 
 export const useCurrentBlock = (): number => {
   const { chainId } = useActiveChainId()
-  const { data: currentBlock = 0 } = useSWRImmutable(['blockNumber', chainId])
-  return currentBlock
+  const { data: currentBlock = 0 } = useBlockNumber({
+    chainId,
+    watch: true,
+  })
+  return Number(currentBlock)
 }
 
-export const useChainCurrentBlock = (chainId: number): number => {
-  const { chainId: activeChainId } = useActiveWeb3React()
-  const provider = useProvider({ chainId })
-  const { data: currentBlock = 0 } = useSWR(
-    chainId ? (activeChainId === chainId ? ['blockNumber', chainId] : ['chainBlockNumber', chainId]) : null,
-    activeChainId !== chainId
-      ? async () => {
-          const blockNumber = await provider.getBlockNumber()
-          return blockNumber
-        }
-      : undefined,
-    activeChainId !== chainId
-      ? {
-          refreshInterval: REFRESH_BLOCK_INTERVAL,
-        }
-      : undefined,
-  )
-  return currentBlock
+export function useCurrentBlockTimestamp(chainId?: number) {
+  const { chainId: activeChainId } = useActiveChainId()
+  const isTargetDifferent = Boolean(chainId && activeChainId !== chainId)
+  useWatchBlock({ chainId, enabled: isTargetDifferent })
+  const { data: timestamp } = useBlockTimestamp({
+    chainId: chainId ?? activeChainId,
+  })
+  return timestamp
+}
+
+export const useChainCurrentBlock = (chainId?: number) => {
+  const { chainId: activeChainId } = useActiveChainId()
+  const activeChainBlockNumber = useCurrentBlock()
+  const isTargetDifferent = Boolean(chainId && activeChainId !== chainId)
+  const { data: targetChainBlockNumber } = useWagmiBlockNumber({
+    chainId,
+    watch: true,
+    query: {
+      enabled: isTargetDifferent,
+      select: useCallback((data: bigint) => (data !== undefined ? Number(data) : undefined), []),
+    },
+  })
+
+  return isTargetDifferent ? targetChainBlockNumber : activeChainBlockNumber
 }
 
 export const useInitialBlock = (): number => {
   const { chainId } = useActiveChainId()
-  const { data: initialBlock = 0 } = useSWRImmutable(['initialBlockNumber', chainId])
-  return initialBlock
+  const { data: initialBlock = 0 } = useInitialBlockNumber({
+    chainId,
+  })
+  return Number(initialBlock)
+}
+
+export const useInitialBlockTimestamp = (chainId?: number): number => {
+  const { chainId: activeChainId } = useActiveChainId()
+  const isTargetDifferent = Boolean(chainId && activeChainId !== chainId)
+  const queryClient = useQueryClient()
+  const { data: initialBlockTimestamp = 0 } = useInitBlockTimestamp({
+    chainId: chainId ?? activeChainId,
+  })
+  useWagmiBlock({
+    chainId,
+    query: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      enabled: !initialBlockTimestamp && isTargetDifferent,
+      select: useCallback(
+        (block) => {
+          queryClient.setQueryData(
+            getInitialBlockTimestampQueryKey(chainId),
+            block !== undefined ? Number(block.timestamp) : undefined,
+          )
+        },
+        [chainId, queryClient],
+      ),
+    },
+  })
+  return initialBlockTimestamp
 }

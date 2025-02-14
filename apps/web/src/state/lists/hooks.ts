@@ -1,17 +1,29 @@
-import { ChainId } from '@pancakeswap/sdk'
-import { TokenAddressMap as TTokenAddressMap, WrappedTokenInfo, TokenList, TokenInfo } from '@pancakeswap/token-lists'
+import { ChainId } from '@pancakeswap/chains'
+import { TokenAddressMap as TTokenAddressMap, TokenInfo, TokenList, WrappedTokenInfo } from '@pancakeswap/token-lists'
 import { ListsState } from '@pancakeswap/token-lists/react'
-import { DEFAULT_LIST_OF_LISTS, OFFICIAL_LISTS, UNSUPPORTED_LIST_URLS, WARNING_LIST_URLS } from 'config/constants/lists'
+import { EMPTY_LIST } from '@pancakeswap/tokens'
+import { enumValues } from '@pancakeswap/utils/enumValues'
+import {
+  DEFAULT_LIST_OF_LISTS,
+  MULTI_CHAIN_LIST_URLS,
+  OFFICIAL_LISTS,
+  UNSUPPORTED_LIST_URLS,
+  WARNING_LIST_URLS,
+} from 'config/constants/lists'
+import { useActiveChainId } from 'hooks/useActiveChainId'
 import { atom, useAtomValue } from 'jotai'
-import mapValues from 'lodash/mapValues'
 import groupBy from 'lodash/groupBy'
 import keyBy from 'lodash/keyBy'
-import { EMPTY_LIST } from '@pancakeswap/tokens'
+import mapValues from 'lodash/mapValues'
+import _pickBy from 'lodash/pickBy'
 import uniqBy from 'lodash/uniqBy'
 import { useMemo } from 'react'
+import { notEmpty } from 'utils/notEmpty'
 import DEFAULT_TOKEN_LIST from '../../config/constants/tokenLists/pancake-default.tokenlist.json'
+import ONRAMP_TOKEN_LIST from '../../config/constants/tokenLists/pancake-supported-onramp-currency-list.json'
 import UNSUPPORTED_TOKEN_LIST from '../../config/constants/tokenLists/pancake-unsupported.tokenlist.json'
 import WARNING_TOKEN_LIST from '../../config/constants/tokenLists/pancake-warning.tokenlist.json'
+import { safeGetAddress } from '../../utils'
 import { listsAtom } from './lists'
 
 type TokenAddressMap = TTokenAddressMap<ChainId>
@@ -43,23 +55,31 @@ const activeListUrlsAtom = atom((get) => {
 })
 
 const combineTokenMapsWithDefault = (lists: ListsState['byUrl'], urls: string[]) => {
-  const defaultTokenMap = listToTokenMap(DEFAULT_TOKEN_LIST)
+  const defaultTokenMap = listToTokenMap(DEFAULT_TOKEN_LIST as TokenList, 'address')
   if (!urls) return defaultTokenMap
   return combineMaps(combineTokenMaps(lists, urls), defaultTokenMap)
 }
 
-const combineTokenMaps = (lists: ListsState['byUrl'], urls: string[]) => {
+const combineTokenMapsWithOnRamp = () => {
+  const onRampTokens = listToTokenMap(ONRAMP_TOKEN_LIST as TokenList, 'symbol')
+  return onRampTokens
+}
+
+export const combinedCurrenciesMapFromActiveUrlsAtom = atom(() => {
+  return combineTokenMapsWithOnRamp()
+})
+
+const combineTokenMaps = (lists: ListsState['byUrl'], urls: string[]): any => {
   if (!urls) return EMPTY_LIST
   return (
-    urls
-      .slice()
+    [...urls]
       // sort by priority so top priority goes last
       .sort(sortByListPriority)
       .reduce((allTokens, currentUrl) => {
         const current = lists[currentUrl]?.current
         if (!current) return allTokens
         try {
-          const newTokens = Object.assign(listToTokenMap(current))
+          const newTokens = Object.assign(listToTokenMap(current, 'address'))
           return combineMaps(allTokens, newTokens)
         } catch (error) {
           console.error('Could not show token list due to error', error)
@@ -92,9 +112,9 @@ export const combinedTokenMapFromOfficialsUrlsAtom = atom((get) => {
 export const tokenListFromOfficialsUrlsAtom = atom((get) => {
   const lists: ListsState['byUrl'] = get(selectorByUrlsAtom)
 
-  const mergedTokenLists: TokenInfo[] = OFFICIAL_LISTS.reduce((acc, url) => {
+  const mergedTokenLists: TokenInfo[] = OFFICIAL_LISTS.reduce<TokenInfo[]>((acc, url) => {
     if (lists?.[url]?.current?.tokens) {
-      acc.push(...lists?.[url]?.current.tokens)
+      acc.push(...(lists?.[url]?.current?.tokens || []))
     }
     return acc
   }, [])
@@ -113,7 +133,7 @@ export const tokenListFromOfficialsUrlsAtom = atom((get) => {
 export const combinedTokenMapFromUnsupportedUrlsAtom = atom((get) => {
   const lists = get(selectorByUrlsAtom)
   // get hard coded unsupported tokens
-  const localUnsupportedListMap = listToTokenMap(UNSUPPORTED_TOKEN_LIST)
+  const localUnsupportedListMap = listToTokenMap(UNSUPPORTED_TOKEN_LIST as TokenList, 'address')
   // get any loaded unsupported tokens
   const loadedUnsupportedListMap = combineTokenMaps(lists, UNSUPPORTED_LIST_URLS)
 
@@ -123,29 +143,36 @@ export const combinedTokenMapFromUnsupportedUrlsAtom = atom((get) => {
 export const combinedTokenMapFromWarningUrlsAtom = atom((get) => {
   const lists = get(selectorByUrlsAtom)
   // get hard coded unsupported tokens
-  const localUnsupportedListMap = listToTokenMap(WARNING_TOKEN_LIST)
+  const localUnsupportedListMap = listToTokenMap(WARNING_TOKEN_LIST as TokenList, 'address')
   // get any loaded unsupported tokens
   const loadedUnsupportedListMap = combineTokenMaps(lists, WARNING_LIST_URLS)
 
   return combineMaps(localUnsupportedListMap, loadedUnsupportedListMap)
 })
-
 const listCache: WeakMap<TokenList, TokenAddressMap> | null =
   typeof WeakMap !== 'undefined' ? new WeakMap<TokenList, TokenAddressMap>() : null
 
-export function listToTokenMap(list: TokenList): TokenAddressMap {
+export function listToTokenMap(list: TokenList, key?: string): TokenAddressMap {
   const result = listCache?.get(list)
   if (result) return result
 
   const tokenMap: WrappedTokenInfo[] = uniqBy(
     list.tokens,
-    (tokenInfo) => `${tokenInfo.chainId}#${tokenInfo.address}`,
-  ).map((tokenInfo) => new WrappedTokenInfo(tokenInfo))
+    (tokenInfo: TokenInfo) => `${tokenInfo.chainId}#${tokenInfo.address}`,
+  )
+    .map((tokenInfo) => {
+      const checksummedAddress = safeGetAddress(tokenInfo.address)
+      if (checksummedAddress) {
+        return new WrappedTokenInfo({ ...tokenInfo, address: checksummedAddress })
+      }
+      return null
+    })
+    .filter(notEmpty)
 
   const groupedTokenMap: { [chainId: string]: WrappedTokenInfo[] } = groupBy(tokenMap, 'chainId')
 
   const tokenAddressMap = mapValues(groupedTokenMap, (tokenInfoList) =>
-    mapValues(keyBy(tokenInfoList, 'address'), (tokenInfo) => ({ token: tokenInfo, list })),
+    mapValues(keyBy(tokenInfoList, key), (tokenInfo) => ({ token: tokenInfo, list })),
   ) as TokenAddressMap
 
   // add chain id item if not exist
@@ -172,22 +199,43 @@ export function useAllLists(): {
     readonly error: string | null
   }
 } {
-  return useAtomValue(selectorByUrlsAtom)
+  const { chainId } = useActiveChainId()
+  return useAllListsByChainId(chainId)
+}
+export function useAllListsByChainId(chainId: number): {
+  readonly [url: string]: {
+    readonly current: TokenList | null
+    readonly pendingUpdate: TokenList | null
+    readonly loadingRequestId: string | null
+    readonly error: string | null
+  }
+} {
+  const urls = useAtomValue(selectorByUrlsAtom)
+
+  return useMemo(
+    () => _pickBy(urls, (_, url) => chainId && MULTI_CHAIN_LIST_URLS[chainId]?.includes(url)),
+    [chainId, urls],
+  )
 }
 
 function combineMaps(map1: TokenAddressMap, map2: TokenAddressMap): TokenAddressMap {
-  return {
-    [ChainId.ETHEREUM]: { ...map1[ChainId.ETHEREUM], ...map2[ChainId.ETHEREUM] },
-    [ChainId.RINKEBY]: { ...map1[ChainId.RINKEBY], ...map2[ChainId.RINKEBY] },
-    [ChainId.GOERLI]: { ...map1[ChainId.GOERLI], ...map2[ChainId.GOERLI] },
-    [ChainId.BSC]: { ...map1[ChainId.BSC], ...map2[ChainId.BSC] },
-    [ChainId.BSC_TESTNET]: { ...map1[ChainId.BSC_TESTNET], ...map2[ChainId.BSC_TESTNET] },
+  const combinedMap: TokenAddressMap = {} as TokenAddressMap
+  for (const chainId of enumValues(ChainId)) {
+    combinedMap[chainId as number] = { ...map1[chainId], ...map2[chainId] }
   }
+  return combinedMap
 }
 
 // filter out unsupported lists
 export function useActiveListUrls(): string[] | undefined {
-  return useAtomValue(activeListUrlsAtom)
+  const { chainId } = useActiveChainId()
+  return useActiveListUrlsByChainId(chainId)
+}
+
+export function useActiveListUrlsByChainId(chainId: number): string[] | undefined {
+  const urls = useAtomValue(activeListUrlsAtom)
+
+  return useMemo(() => urls.filter((url) => chainId && MULTI_CHAIN_LIST_URLS[chainId]?.includes(url)), [urls, chainId])
 }
 
 export function useInactiveListUrls() {

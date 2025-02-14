@@ -1,11 +1,15 @@
 /* eslint-disable no-var */
 /* eslint-disable vars-on-top */
+import { Currency } from '@pancakeswap/swap-sdk-core'
 import { renderHook } from '@testing-library/react-hooks'
-import { DEFAULT_OUTPUT_CURRENCY } from 'config/constants/exchange'
-import { parse } from 'querystring'
 import { useCurrency } from 'hooks/Tokens'
+import { useAtom } from 'jotai'
+import { parse } from 'querystring'
+import { useEffect } from 'react'
+import { swapReducerAtom } from 'state/swap/reducer'
 import { createReduxWrapper } from 'testUtils'
-import { Field } from './actions'
+import { Mock, vi } from 'vitest'
+import { Field, replaceSwapState } from './actions'
 import { queryParametersToSwapState, useDerivedSwapInfo, useSwapState } from './hooks'
 
 describe('hooks', () => {
@@ -28,9 +32,9 @@ describe('hooks', () => {
       })
     })
 
-    test('should return BNB CAKE pair by default', () => {
+    test('should return Native by default', () => {
       expect(queryParametersToSwapState(parse(''))).toEqual({
-        [Field.OUTPUT]: { currencyId: DEFAULT_OUTPUT_CURRENCY },
+        [Field.OUTPUT]: { currencyId: undefined },
         [Field.INPUT]: { currencyId: 'BNB' },
         typedValue: '',
         independentField: Field.INPUT,
@@ -96,10 +100,10 @@ describe('hooks', () => {
 })
 
 // weird bug on jest Reference Error, must use `var` here
-var mockUseActiveWeb3React: jest.Mock
+var mockUseActiveWeb3React: Mock
 
-jest.mock('../../hooks/useActiveWeb3React', () => {
-  mockUseActiveWeb3React = jest.fn().mockReturnValue({
+vi.mock('../../hooks/useActiveWeb3React', () => {
+  mockUseActiveWeb3React = vi.fn().mockReturnValue({
     chainId: 56,
   })
   return {
@@ -108,12 +112,13 @@ jest.mock('../../hooks/useActiveWeb3React', () => {
   }
 })
 
-var mockAccount: jest.Mock
+var mockAccount: Mock
 
-jest.mock('wagmi', () => {
-  mockAccount = jest.fn().mockReturnValue({})
-  const original = jest.requireActual('wagmi') // Step 2.
+vi.mock('wagmi', async () => {
+  mockAccount = vi.fn().mockReturnValue({})
+  const original = await vi.importActual('wagmi') // Step 2.
   return {
+    // @ts-ignore
     ...original,
     useAccount: mockAccount,
   }
@@ -132,7 +137,13 @@ describe('#useDerivedSwapInfo', () => {
         } = useSwapState()
         const inputCurrency = useCurrency(inputCurrencyId)
         const outputCurrency = useCurrency(outputCurrencyId)
-        return useDerivedSwapInfo(independentField, typedValue, inputCurrency, outputCurrency, recipient)
+        return useDerivedSwapInfo(
+          independentField,
+          typedValue,
+          inputCurrency as Currency,
+          outputCurrency as Currency,
+          recipient || '',
+        )
       },
       { wrapper: createReduxWrapper() },
     )
@@ -149,6 +160,18 @@ describe('#useDerivedSwapInfo', () => {
     mockAccount.mockReturnValue({ address: '0x33edFBc4934baACc78f4d317bc07639119dd3e78' })
     const { result, rerender } = renderHook(
       () => {
+        const [, dispatch] = useAtom(swapReducerAtom)
+        useEffect(() => {
+          dispatch(
+            replaceSwapState({
+              field: Field.INPUT,
+              typedValue: '0.11',
+              inputCurrencyId: 'BNB',
+              outputCurrencyId: 'BNB',
+              recipient: '',
+            }),
+          )
+        }, [dispatch])
         const {
           independentField,
           typedValue,
@@ -158,21 +181,20 @@ describe('#useDerivedSwapInfo', () => {
         } = useSwapState()
         const inputCurrency = useCurrency(inputCurrencyId)
         const outputCurrency = useCurrency(outputCurrencyId)
-        return useDerivedSwapInfo(independentField, typedValue, inputCurrency, outputCurrency, recipient)
+        return useDerivedSwapInfo(
+          independentField,
+          typedValue,
+          inputCurrency as Currency,
+          outputCurrency as Currency,
+          recipient || '',
+        )
       },
       {
-        wrapper: createReduxWrapper({
-          swap: {
-            typedValue: '0.11',
-            [Field.INPUT]: { currencyId: 'BNB' },
-            [Field.OUTPUT]: { currencyId: 'BNB' },
-          },
-        }),
+        wrapper: createReduxWrapper(),
       },
     )
 
     rerender()
-
     expect(result.current.inputError).toBe('Enter a recipient')
     mockAccount.mockClear()
   })
@@ -180,6 +202,18 @@ describe('#useDerivedSwapInfo', () => {
   it('should return undefined when no pair', async () => {
     const { result } = renderHook(
       () => {
+        const [, dispatch] = useAtom(swapReducerAtom)
+        useEffect(() => {
+          dispatch(
+            replaceSwapState({
+              field: Field.INPUT,
+              typedValue: '',
+              inputCurrencyId: '',
+              outputCurrencyId: '',
+              recipient: null,
+            }),
+          )
+        }, [dispatch])
         const {
           independentField,
           typedValue,
@@ -189,7 +223,13 @@ describe('#useDerivedSwapInfo', () => {
         } = useSwapState()
         const inputCurrency = useCurrency(inputCurrencyId)
         const outputCurrency = useCurrency(outputCurrencyId)
-        const swapInfo = useDerivedSwapInfo(independentField, typedValue, inputCurrency, outputCurrency, recipient)
+        const swapInfo = useDerivedSwapInfo(
+          independentField,
+          typedValue,
+          inputCurrency as Currency,
+          outputCurrency as Currency,
+          recipient || '',
+        )
         return {
           swapInfo,
         }

@@ -1,29 +1,35 @@
+/* eslint-disable camelcase */
 import { ChainId, Coin, Pair, PAIR_RESERVE_TYPE_TAG } from '@pancakeswap/aptos-swap-sdk'
-import { useAccount, useAccountResource, useCoins, useQueries, useQuery } from '@pancakeswap/awgmi'
+import { useAccount, useAccountResource, useCoins } from '@pancakeswap/awgmi'
 import {
-  FetchCoinResult,
-  unwrapTypeArgFromString,
-  fetchTableItem,
   FetchAccountResourceResult,
+  fetchAptosView,
+  FetchCoinResult,
+  fetchTableItem,
+  unwrapTypeArgFromString,
 } from '@pancakeswap/awgmi/core'
+import { DeserializedFarmsState, deserializeFarm, SerializedFarmConfig } from '@pancakeswap/farms'
 import { getFarmsPrices } from '@pancakeswap/farms/farmPrices'
 import { BIG_TWO, BIG_ZERO } from '@pancakeswap/utils/bigNumber'
 import { getFullDecimalMultiplier } from '@pancakeswap/utils/getFullDecimalMultiplier'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import BigNumber from 'bignumber.js'
+import { FARM_DEFAULT_DECIMALS } from 'components/Farms/constants'
 import { APT, L0_USDC } from 'config/coins'
 import { CAKE_PID } from 'config/constants'
+import { masterchefGetAptIncentiveInfo, masterchefGetPendingApt } from 'config/constants/contracts/masterchef'
 import { getFarmConfig } from 'config/constants/farms'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { useActiveNetwork } from 'hooks/useNetwork'
+import useLedgerTimestamp from 'hooks/useLedgerTimestamp'
+import { useActiveChainId, useActiveNetwork } from 'hooks/useNetwork'
 import { usePairReservesQueries } from 'hooks/usePairs'
 import fromPairs from 'lodash/fromPairs'
 import { useMemo } from 'react'
-import { FARMS_ADDRESS, FARMS_NAME_TAG, FARMS_USER_INFO_RESOURCE, FARMS_USER_INFO } from 'state/farms/constants'
+
+import { FARMS_ADDRESS, FARMS_NAME_TAG, FARMS_USER_INFO, FARMS_USER_INFO_RESOURCE } from 'state/farms/constants'
 import { FarmResource, FarmUserInfoResource } from 'state/farms/types'
 import priceHelperLpsMainnet from '../../config/constants/priceHelperLps/farms/1'
 import priceHelperLpsTestnet from '../../config/constants/priceHelperLps/farms/2'
-import { deserializeFarm } from './utils/deserializeFarm'
-import { pendingCake } from './utils/pendingCake'
+import { calcPendingRewardCake, calcRewardCakePerShare } from './utils/pendingCake'
 
 const farmsPriceHelpLpMap = {
   [ChainId.MAINNET]: priceHelperLpsMainnet,
@@ -31,7 +37,7 @@ const farmsPriceHelpLpMap = {
 }
 
 export const useFarmsLength = (): number | undefined => {
-  const { data: farmsLength } = useMasterChefResource((s) => s.data.lp.length)
+  const { data: farmsLength } = useMasterChefResource((s) => s.data.lps.length)
   return farmsLength
 }
 
@@ -48,7 +54,7 @@ export function useMasterChefResource<TData = FarmResource>(select?: ((data: Far
 }
 
 export const useFarms = () => {
-  const { chainId } = useActiveWeb3React()
+  const chainId = useActiveChainId()
   const poolLength = useFarmsLength()
   const { networkName } = useActiveNetwork()
 
@@ -77,7 +83,6 @@ export const useFarms = () => {
   }, [stakeCoinsInfo])
 
   const pairReserves = usePairReservesQueries(lpReservesAddresses)
-
   const lpInfo = useMemo(() => {
     return farmConfig
       .filter((f) => f.pid !== 0 && f.pid !== CAKE_PID)
@@ -93,8 +98,8 @@ export const useFarms = () => {
         const reservesAddress = Pair.getReservesAddress(token, quoteToken)
         const lpReserveX = pairReserves?.[reservesAddress]?.data.reserve_x
         const lpReserveY = pairReserves?.[reservesAddress]?.data.reserve_y
-        const tokenBalanceLP = lpReserveX ? new BigNumber(lpReserveX) : BIG_ZERO
-        const quoteTokenBalanceLP = lpReserveY ? new BigNumber(lpReserveY) : BIG_ZERO
+        const tokenBalanceLP = lpReserveY ? new BigNumber(lpReserveY) : BIG_ZERO
+        const quoteTokenBalanceLP = lpReserveX ? new BigNumber(lpReserveX) : BIG_ZERO
         const lpTotalSupply = stakeCoinsInfoMap[config.lpAddress]?.supply
           ? new BigNumber(stakeCoinsInfoMap[config.lpAddress].supply as string)
           : BIG_ZERO
@@ -119,6 +124,9 @@ export const useFarms = () => {
           : masterChef?.data.total_special_alloc_point
         const poolWeight = totalAlloc ? allocPoint.div(new BigNumber(totalAlloc)) : BIG_ZERO
 
+        // tokenPriceVsQuote info for this price helper farm is wrong, opposite way should be used
+        const isAptCakeLp = config.pid === null && config.lpSymbol === 'APT-CAKE LP'
+
         return {
           ...config,
           tokenAmountTotal: tokenAmountTotal.toFixed(6),
@@ -127,7 +135,9 @@ export const useFarms = () => {
           lpTotalInQuoteToken: lpTotalInQuoteToken.toFixed(6),
           tokenPriceVsQuote:
             !quoteTokenAmountTotal.isZero() && !tokenAmountTotal.isZero()
-              ? quoteTokenAmountTotal.div(tokenAmountTotal).toFixed(6)
+              ? isAptCakeLp
+                ? tokenAmountTotal.div(quoteTokenAmountTotal).toFixed(6)
+                : quoteTokenAmountTotal.div(tokenAmountTotal).toFixed(6)
               : '0',
           poolWeight: poolWeight.toString(),
           multiplier: `${allocPoint.div(100).toString()}X`,
@@ -135,22 +145,79 @@ export const useFarms = () => {
       })
   }, [farmConfig, masterChef, pairReserves, stakeCoinsInfoMap])
 
-  const farmsWithPrices = useMemo(() => getFarmsPrices(lpInfo, nativeStableLpMap[chainId]), [chainId, lpInfo])
+  const farmsWithPrices = useMemo(
+    () => getFarmsPrices(lpInfo, nativeStableLpMap[chainId], FARM_DEFAULT_DECIMALS),
+    [chainId, lpInfo],
+  )
 
-  useFarmsUserInfo()
+  const userInfos = useFarmsUserInfo()
+  const getNow = useLedgerTimestamp()
+  const currentDate = getNow() / 1000
+  const showCakePerSecond = masterChef?.data && new BigNumber(currentDate).lte(masterChef.data.end_timestamp)
+  const regularCakePerSeconds = showCakePerSecond
+    ? new BigNumber(masterChef?.data?.cake_per_second)
+        .times(masterChef.data.cake_rate_to_regular)
+        .div(new BigNumber(masterChef.data.cake_rate_to_regular).plus(masterChef.data.cake_rate_to_special))
+        .toNumber()
+    : 0
+
+  const totalRegularAllocPoint = masterChef?.data.total_regular_alloc_point
+  const cakePerBlock = masterChef?.data.cake_per_second
+
+  // Aptos Reward
+  const userAptosReward = useFarmsPendingAptosReward(farmConfig)
+  const aptIncentiveInfo = useGetAptIncentiveInfo()
 
   return useMemo(() => {
     return {
       userDataLoaded: true,
       poolLength,
-      regularCakePerBlock: masterChef?.data ? Number(masterChef.data.cake_per_second) : 0,
+      regularCakePerBlock: regularCakePerSeconds,
       loadArchivedFarmsData: false,
-      data: farmsWithPrices.filter((f) => !!f.pid).map(deserializeFarm),
-      fetchUserFarmsData: () => {
-        //
-      },
-    }
-  }, [poolLength, masterChef?.data, farmsWithPrices])
+      totalRegularAllocPoint,
+      cakePerBlock,
+      data: farmsWithPrices
+        .filter((f) => !!f.pid)
+        .map(deserializeFarm)
+        .map((f) => {
+          const accCakePerShare =
+            masterChef?.data && f.pid ? calcRewardCakePerShare(masterChef.data, String(f.pid), getNow) : 0
+          const earningToken = calcPendingRewardCake(
+            userInfos[f.pid]?.amount,
+            userInfos[f.pid]?.reward_debt,
+            accCakePerShare,
+          )
+          const stakedBalance = new BigNumber(userInfos[f.pid]?.amount)
+          const earningsDualTokenBalance = new BigNumber(userAptosReward?.[f.pid]?.amount)
+
+          return {
+            ...f,
+            ...(f.dual && {
+              dual: {
+                ...f.dual,
+                aptIncentiveInfo,
+              },
+            }),
+            userData: {
+              earnings: earningToken.gte(0) ? earningToken : BIG_ZERO,
+              stakedBalance: stakedBalance.gte(0) ? stakedBalance : BIG_ZERO,
+              earningsDualTokenBalance: earningsDualTokenBalance.gte(0) ? earningsDualTokenBalance : BIG_ZERO,
+            },
+          }
+        }),
+    } as DeserializedFarmsState
+  }, [
+    poolLength,
+    regularCakePerSeconds,
+    totalRegularAllocPoint,
+    cakePerBlock,
+    farmsWithPrices,
+    masterChef,
+    getNow,
+    userInfos,
+    userAptosReward,
+    aptIncentiveInfo,
+  ])
 }
 
 export function useFarmsUserInfo() {
@@ -159,17 +226,18 @@ export function useFarmsUserInfo() {
   const { data } = useAccountResource<FetchAccountResourceResult<FarmUserInfoResource>>({
     address: account?.address,
     resourceType: FARMS_USER_INFO_RESOURCE,
+    watch: true,
   })
 
-  useQueries({
+  const userInfoQueries = useQueries({
     queries:
       data?.data.pids.map((pid) => ({
         staleTime: Infinity,
-        enable: Boolean(pid) && Boolean(account?.address) && Boolean(data.data.pid_to_user_info.inner.handle),
-        refetchInterval: 5_000,
+        enabled: Boolean(pid) && Boolean(account?.address) && Boolean(data.data.pid_to_user_info.inner.handle),
+        refetchInterval: 3_000,
         queryKey: [{ entity: 'poolUserInfo', pid, networkName, address: account?.address }],
-        queryFn: () =>
-          fetchTableItem({
+        queryFn: async () => {
+          const item = await fetchTableItem({
             networkName,
             handle: data.data.pid_to_user_info.inner.handle,
             data: {
@@ -177,9 +245,17 @@ export function useFarmsUserInfo() {
               key: pid,
               valueType: FARMS_USER_INFO,
             },
-          }),
+          })
+          return { ...item, pid }
+        },
       })) ?? [],
   })
+
+  const userInfos = useMemo(() => {
+    return fromPairs(userInfoQueries.filter((u) => !!u.data).map((u) => [(u as any).data.pid, u.data]))
+  }, [userInfoQueries])
+
+  return userInfos
 }
 
 const nativeStableLpMap = {
@@ -199,29 +275,66 @@ const nativeStableLpMap = {
 export function useFarmUserInfoCache(pid: string) {
   const { account } = useAccount()
   const { networkName } = useActiveNetwork()
-  // eslint-disable-next-line camelcase
-  return useQuery<{ amount: string; reward_debt: string }>(
-    [{ entity: 'poolUserInfo', pid, networkName, address: account?.address }],
-    {
-      enabled: Boolean(account?.address),
-    },
-  )
+  return useQuery<{ amount: string; reward_debt: string }>({
+    queryKey: [{ entity: 'poolUserInfo', pid, networkName, address: account?.address }],
+    enabled: Boolean(account?.address),
+  })
 }
 
-export function useFarmEarning(pid: string) {
-  const { data: masterChef } = useMasterChefResource()
+export function useFarmsPendingAptosReward(farmConfig: SerializedFarmConfig[]) {
+  const { account } = useAccount()
+  const { networkName } = useActiveNetwork()
+  const userPendingAptosQueries = useQueries({
+    queries:
+      farmConfig.map((farm) => ({
+        staleTime: Infinity,
+        enabled: Boolean(farm.lpAddress) && Boolean(farm.pid) && Boolean(account?.address),
+        refetchInterval: 3_000,
+        queryKey: [
+          {
+            entity: 'getPendingAptos',
+            networkName,
+            pid: farm.pid,
+            lpAddress: farm.lpAddress,
+            address: account?.address,
+          },
+        ],
+        queryFn: async () => {
+          const params = masterchefGetPendingApt([account?.address ?? ''], [farm.lpAddress])
+          const response = await fetchAptosView({ networkName, params })
+          const amount = response?.[0] ?? 0
+          return { pid: farm.pid, amount }
+        },
+      })) ?? [],
+  })
 
-  const { data: userInfo } = useFarmUserInfoCache(String(pid))
+  const userAptosReward = useMemo(() => {
+    return fromPairs(userPendingAptosQueries.filter((u: any) => u?.data?.pid).map((u) => [(u as any).data.pid, u.data]))
+  }, [userPendingAptosQueries])
 
-  return useMemo(
-    () =>
-      masterChef?.data.pool_info[pid].acc_cake_per_share && userInfo && userInfo.amount !== '0'
-        ? pendingCake(
-            userInfo.amount,
-            userInfo.reward_debt,
-            masterChef?.data.pool_info[pid].acc_cake_per_share,
-          ).toNumber()
-        : 0,
-    [masterChef?.data.pool_info, pid, userInfo],
-  )
+  return userAptosReward
+}
+
+export function useGetAptIncentiveInfo() {
+  const { networkName } = useActiveNetwork()
+
+  const { data: aptIncentiveInfo } = useQuery({
+    queryKey: ['apt-incentive-info', networkName],
+    queryFn: async () => {
+      const params = masterchefGetAptIncentiveInfo()
+      const response = await fetchAptosView({ networkName, params })
+      // if(rate == 0 ) it means not start ,
+      // if(rate > 0 && close == false) it means start , not closed yet
+      // if (rate > 0 && close == true ) it means closed
+      // response?.[1] True = Aptos Reward close.
+      const rate = response?.[0] ?? 0
+      return rate === 0 || (rate > 0 && response?.[1] === true) ? 0 : rate
+    },
+    enabled: Boolean(networkName),
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  })
+
+  return aptIncentiveInfo ?? 0
 }

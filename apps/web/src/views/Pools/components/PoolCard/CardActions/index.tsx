@@ -1,8 +1,10 @@
 import BigNumber from 'bignumber.js'
 
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { Flex, Text, Box, Pool } from '@pancakeswap/uikit'
+import { Flex, Text, Box } from '@pancakeswap/uikit'
+import { Pool } from '@pancakeswap/widgets-internal'
+
 import { useTranslation } from '@pancakeswap/localization'
 import { PoolCategory } from 'config/constants/types'
 import { useProfileRequirement } from 'views/Pools/hooks/useProfileRequirement'
@@ -40,7 +42,7 @@ const CardActions: React.FC<React.PropsWithChildren<CardActionsProps>> = ({ pool
       <Flex flexDirection="column">
         <>
           <Box display="inline">
-            <InlineText color="secondary" textTransform="uppercase" bold fontSize="12px">
+            <InlineText color="secondary" bold fontSize="12px">
               {`${earningToken.symbol} `}
             </InlineText>
             <InlineText color="textSubtle" textTransform="uppercase" bold fontSize="12px">
@@ -52,7 +54,7 @@ const CardActions: React.FC<React.PropsWithChildren<CardActionsProps>> = ({ pool
             earningTokenSymbol={earningToken.symbol}
             earningTokenDecimals={earningToken.decimals}
             sousId={sousId}
-            earningTokenPrice={earningTokenPrice}
+            earningTokenPrice={earningTokenPrice || 0}
             isBnbPool={isBnbPool}
             isLoading={isLoading}
           />
@@ -67,7 +69,7 @@ const CardActions: React.FC<React.PropsWithChildren<CardActionsProps>> = ({ pool
         </Box>
         {notMeetRequired || notMeetThreshold ? (
           <ProfileRequirementWarning profileRequirement={profileRequirement} />
-        ) : needsApproval ? (
+        ) : needsApproval && !isStaked && !pool.isFinished ? (
           <ApprovalAction pool={pool} isLoading={isLoading} />
         ) : (
           <StakeActions

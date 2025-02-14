@@ -1,10 +1,11 @@
 import { Currency } from '@pancakeswap/sdk'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import CurrencyLogo from './CurrencyLogo'
 
 const Wrapper = styled.div<{ margin: boolean }>`
   display: flex;
   flex-direction: row;
+  align-items: center;
   margin-right: ${({ margin }) => margin && '4px'};
 `
 

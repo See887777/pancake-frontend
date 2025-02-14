@@ -1,6 +1,8 @@
-import { Swap } from '@pancakeswap/uikit'
-import { PageMeta } from 'components/Layout/Page'
-import { EXCHANGE_DOCS_URLS } from 'config/constants'
+import { ChainId } from '@pancakeswap/chains'
+import { useTranslation } from '@pancakeswap/localization'
+import { Swap } from '@pancakeswap/widgets-internal'
+import { EXCHANGE_HELP_URLS } from 'config/constants'
+import { useActiveChainId } from 'hooks/useActiveChainId'
 
 const Page: React.FC<
   React.PropsWithChildren<{
@@ -8,29 +10,42 @@ const Page: React.FC<
     hideFooterOnDesktop?: boolean
     noMinHeight?: boolean
     helpUrl?: string
+    showExternalLink?: boolean
+    showHelpLink?: boolean
+    style?: React.CSSProperties
   }>
 > = ({
   children,
   removePadding = false,
   hideFooterOnDesktop = false,
   noMinHeight = false,
-  helpUrl = EXCHANGE_DOCS_URLS,
+  helpUrl = EXCHANGE_HELP_URLS,
+  showExternalLink = true,
+  showHelpLink = true,
   ...props
 }) => {
+  const { t } = useTranslation()
+  const { chainId } = useActiveChainId()
+  const isBSC = chainId === ChainId.BSC
+  const externalText = isBSC ? t('Bridge assets to BNB Chain') : ''
+  const externalLinkUrl = isBSC ? 'https://bridge.pancakeswap.finance/' : ''
+
   return (
-    <>
-      <PageMeta />
-      <Swap.Page
-        removePadding={removePadding}
-        noMinHeight={noMinHeight}
-        hideFooterOnDesktop={hideFooterOnDesktop}
-        helpUrl={helpUrl}
-        {...props}
-      >
-        {children}
-      </Swap.Page>
-    </>
+    <Swap.Page
+      removePadding={removePadding}
+      noMinHeight={noMinHeight}
+      hideFooterOnDesktop={hideFooterOnDesktop}
+      helpUrl={showHelpLink ? helpUrl : undefined}
+      externalText={externalText}
+      externalLinkUrl={showExternalLink ? externalLinkUrl : undefined}
+      {...props}
+    >
+      {children}
+    </Swap.Page>
   )
 }
 
 export default Page
+
+export const PageWithoutFAQ = Page
+PageWithoutFAQ.defaultProps = { showHelpLink: false, showExternalLink: false }

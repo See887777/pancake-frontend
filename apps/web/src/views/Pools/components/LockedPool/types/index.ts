@@ -1,31 +1,35 @@
-import { Dispatch, SetStateAction } from 'react'
 import { Token } from '@pancakeswap/sdk'
 import BigNumber from 'bignumber.js'
-import { VaultPosition, VaultPositionParams } from 'utils/cakePool'
+import { Dispatch, SetStateAction } from 'react'
 import { DeserializedLockedVaultUser } from 'state/types'
+import { VaultPosition, VaultPositionParams } from 'utils/cakePool'
 
 type VoidFn = () => void
 
-export type PrepConfirmArg = (arg: ValidatorArg) => ValiratorReturn
+export type PrepConfirmArg = (arg: ValidatorArg) => ValidatorReturn
 
 export interface GenericModalProps {
   onDismiss?: VoidFn
   stakingToken: Token
   currentBalance: BigNumber
   stakingTokenBalance: BigNumber
+  stakingTokenPrice?: number
+  customLockAmount?: string
+  customLockWeekInSeconds?: number
 }
 
 export interface ValidatorArg {
   duration: number
 }
 
-export interface ValiratorReturn {
+export interface ValidatorReturn {
   finalLockedAmount?: number
   finalDuration?: number
 }
 
 export interface ExtendDurationModal {
-  stakingToken: Token
+  stakingToken?: Token
+  stakingTokenPrice: number
   currentLockedAmount: number
   onDismiss?: VoidFn
   modalTitle?: string
@@ -34,15 +38,18 @@ export interface ExtendDurationModal {
   currentBalance?: BigNumber
   lockStartTime: string
   isRenew?: boolean
+  customLockWeekInSeconds?: number
 }
 
 export interface AddButtonProps {
   currentBalance: BigNumber
-  stakingToken: Token
+  stakingToken?: Token
   currentLockedAmount: BigNumber
   lockEndTime: string
   lockStartTime: string
   stakingTokenBalance: BigNumber
+  stakingTokenPrice: number
+  customLockAmount?: string
 }
 
 export interface OverviewPropsType {
@@ -67,6 +74,8 @@ export interface AddAmountModalProps {
   lockStartTime?: string
   lockEndTime?: string
   stakingTokenBalance: BigNumber
+  stakingTokenPrice: number
+  customLockAmount?: string
 }
 
 export interface ModalValidator {
@@ -78,6 +87,7 @@ export interface ModalValidator {
 export interface LockedModalBodyPropsType {
   onDismiss?: VoidFn
   stakingToken: Token
+  stakingTokenPrice?: number
   currentBalance?: BigNumber
   lockedAmount: BigNumber
   editAmountOnly?: React.ReactElement
@@ -95,10 +105,12 @@ export interface LockedModalBodyPropsType {
     duration: number
     isMaxSelected?: boolean
   }) => React.ReactElement
+  customLockWeekInSeconds?: number
 }
 
 export interface ExtendDurationButtonPropsType {
-  stakingToken: Token
+  stakingToken?: Token
+  stakingTokenPrice: number
   currentLockedAmount: number
   currentBalance?: BigNumber
   lockEndTime: string
@@ -106,22 +118,27 @@ export interface ExtendDurationButtonPropsType {
   children: React.ReactNode
   modalTitle?: string
   isRenew?: boolean
+  customLockWeekInSeconds?: number
 }
 
 export interface AfterLockedActionsPropsType {
   lockEndTime: string
   lockStartTime: string
   currentLockedAmount: number
-  stakingToken: Token
+  stakingToken?: Token
+  stakingTokenPrice: number
   position: VaultPosition
   isInline?: boolean
+  hideConvertToFlexibleButton?: boolean
+  customLockWeekInSeconds?: number
 }
 
 export interface LockedActionsPropsType extends VaultPositionParams {
   lockStartTime: string
-  stakingToken: Token
-  stakingTokenBalance: BigNumber
-  lockedAmount: BigNumber
+  stakingToken?: Token
+  stakingTokenBalance?: BigNumber
+  stakingTokenPrice: number
+  lockedAmount?: BigNumber
 }
 
 export interface StaticAmountPropsType {
@@ -142,7 +159,5 @@ export interface LockDurationFieldPropsType {
 }
 
 export interface LockedStakingApyPropsType {
-  stakingToken: Token
-  stakingTokenBalance: BigNumber
-  userData: DeserializedLockedVaultUser
+  userData?: DeserializedLockedVaultUser
 }

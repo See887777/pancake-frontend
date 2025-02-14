@@ -1,24 +1,33 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from '@pancakeswap/localization'
+import { Box, Text, useToast } from '@pancakeswap/uikit'
+import { ToastDescriptionWithTx } from 'components/Toast'
+import { FAST_INTERVAL } from 'config/constants'
+import forEach from 'lodash/forEach'
 import merge from 'lodash/merge'
 import pickBy from 'lodash/pickBy'
-import forEach from 'lodash/forEach'
-import { useTranslation } from '@pancakeswap/localization'
-import { useProvider } from 'wagmi'
-import { poll } from '@ethersproject/web'
-import { ToastDescriptionWithTx } from 'components/Toast'
-import { Box, Text, useToast } from '@pancakeswap/uikit'
-import { FAST_INTERVAL } from 'config/constants'
-import useSWRImmutable from 'swr/immutable'
-import { useAppDispatch } from '../index'
+import React, { useEffect, useMemo, useRef } from 'react'
+import { useAppDispatch } from 'state'
 import {
-  finalizeTransaction,
+  BlockNotFoundError,
+  TransactionNotFoundError,
+  TransactionReceiptNotFoundError,
+  WaitForTransactionReceiptTimeoutError,
+} from 'viem'
+import { usePublicClient } from 'wagmi'
+import { retry, RetryableError } from 'state/multicall/retry'
+import { useQuery } from '@tanstack/react-query'
+import { AVERAGE_CHAIN_BLOCK_TIMES } from '@pancakeswap/chains'
+import { BSC_BLOCK_TIME } from 'config'
+import { useFetchBlockData } from '@pancakeswap/wagmi'
+import {
   FarmTransactionStatus,
-  NonBscFarmTransactionStep,
   MsgStatus,
-  NonBscFarmStepType,
+  CrossChainFarmStepType,
+  CrossChainFarmTransactionStep,
+  finalizeTransaction,
 } from './actions'
-import { useAllChainTransactions } from './hooks'
 import { fetchCelerApi } from './fetchCelerApi'
+import { useAllChainTransactions } from './hooks'
 import { TransactionDetails } from './reducer'
 
 export function shouldCheck(
@@ -30,11 +39,12 @@ export function shouldCheck(
 }
 
 export const Updater: React.FC<{ chainId: number }> = ({ chainId }) => {
-  const provider = useProvider({ chainId })
+  const provider = usePublicClient({ chainId })
   const { t } = useTranslation()
 
   const dispatch = useAppDispatch()
   const transactions = useAllChainTransactions(chainId)
+  const refetchBlockData = useFetchBlockData(chainId)
 
   const { toastError, toastSuccess } = useToast()
 
@@ -47,73 +57,78 @@ export const Updater: React.FC<{ chainId: number }> = ({ chainId }) => {
       pickBy(transactions, (transaction) => shouldCheck(fetchedTransactions.current, transaction)),
       (transaction) => {
         const getTransaction = async () => {
-          await provider.getNetwork()
+          try {
+            const receipt: any = await provider.getTransactionReceipt({ hash: transaction.hash })
 
-          const params = { transactionHash: provider.formatter.hash(transaction.hash, true) }
-
-          poll(
-            async () => {
-              const result = await provider.perform('getTransactionReceipt', params)
-
-              if (result == null || result.blockHash == null) {
-                return undefined
-              }
-
-              const receipt = provider.formatter.receipt(result)
-
-              dispatch(
-                finalizeTransaction({
-                  chainId,
-                  hash: transaction.hash,
-                  receipt: {
-                    blockHash: receipt.blockHash,
-                    blockNumber: receipt.blockNumber,
-                    contractAddress: receipt.contractAddress,
-                    from: receipt.from,
-                    status: receipt.status,
-                    to: receipt.to,
-                    transactionHash: receipt.transactionHash,
-                    transactionIndex: receipt.transactionIndex,
-                  },
-                }),
-              )
-
-              const toast = receipt.status === 1 ? toastSuccess : toastError
-              toast(
-                t('Transaction receipt'),
-                <ToastDescriptionWithTx txHash={receipt.transactionHash} txChainId={chainId} />,
-              )
-              return true
-            },
-            { onceBlock: provider },
-          )
-          merge(fetchedTransactions.current, { [transaction.hash]: transactions[transaction.hash] })
+            dispatch(
+              finalizeTransaction({
+                chainId,
+                hash: transaction.hash,
+                receipt: {
+                  blockHash: receipt.blockHash,
+                  blockNumber: Number(receipt.blockNumber),
+                  contractAddress: receipt.contractAddress,
+                  from: receipt.from,
+                  status: receipt.status === 'success' ? 1 : 0,
+                  to: receipt.to,
+                  transactionHash: receipt.transactionHash,
+                  transactionIndex: receipt.transactionIndex,
+                },
+              }),
+            )
+            const toast = receipt.status === 'success' ? toastSuccess : toastError
+            if (receipt.status === 'success') {
+              refetchBlockData()
+            }
+            toast(
+              t('Transaction receipt'),
+              <ToastDescriptionWithTx txHash={receipt.transactionHash} txChainId={chainId} />,
+            )
+          } catch (error) {
+            console.error(error)
+            if (error instanceof TransactionNotFoundError) {
+              throw new RetryableError(`Transaction not found: ${transaction.hash}`)
+            } else if (error instanceof TransactionReceiptNotFoundError) {
+              throw new RetryableError(`Transaction receipt not found: ${transaction.hash}`)
+            } else if (error instanceof BlockNotFoundError) {
+              throw new RetryableError(`Block not found for transaction: ${transaction.hash}`)
+            } else if (error instanceof WaitForTransactionReceiptTimeoutError) {
+              throw new RetryableError(`Timeout reached when fetching transaction receipt: ${transaction.hash}`)
+            }
+          } finally {
+            merge(fetchedTransactions.current, { [transaction.hash]: transactions[transaction.hash] })
+          }
         }
-
-        getTransaction()
+        retry(getTransaction, {
+          n: 10,
+          minWait: 5000,
+          maxWait: 10000,
+          delay: (AVERAGE_CHAIN_BLOCK_TIMES[chainId] ?? BSC_BLOCK_TIME) * 1000 + 1000,
+        })
       },
     )
-  }, [chainId, provider, transactions, dispatch, toastSuccess, toastError, t])
+  }, [chainId, provider, transactions, dispatch, toastSuccess, toastError, t, refetchBlockData])
 
-  const nonBscFarmPendingTxns = useMemo(
+  const crossChainFarmPendingTxns = useMemo(
     () =>
       Object.keys(transactions).filter(
         (hash) =>
           transactions[hash].receipt?.status === 1 &&
-          transactions[hash].type === 'non-bsc-farm' &&
-          transactions[hash].nonBscFarm?.status === FarmTransactionStatus.PENDING,
+          transactions[hash].type === 'cross-chain-farm' &&
+          transactions[hash].crossChainFarm?.status === FarmTransactionStatus.PENDING,
       ),
     [transactions],
   )
 
-  useSWRImmutable(
-    chainId && Boolean(nonBscFarmPendingTxns?.length) && ['checkNonBscFarmTransaction', FAST_INTERVAL, chainId],
-    () => {
-      nonBscFarmPendingTxns.forEach((hash) => {
-        const steps = transactions[hash]?.nonBscFarm?.steps
+  useQuery({
+    queryKey: ['checkCrossChainFarmTransaction', FAST_INTERVAL, chainId],
+
+    queryFn: () => {
+      crossChainFarmPendingTxns.forEach((hash) => {
+        const steps = transactions[hash]?.crossChainFarm?.steps || []
         if (steps.length) {
           const pendingStep = steps.findIndex(
-            (step: NonBscFarmTransactionStep) => step.status === FarmTransactionStatus.PENDING,
+            (step: CrossChainFarmTransactionStep) => step.status === FarmTransactionStatus.PENDING,
           )
           const previousIndex = pendingStep - 1
 
@@ -133,7 +148,7 @@ export const Updater: React.FC<{ chainId: number }> = ({ chainId }) => {
                     : FarmTransactionStatus.PENDING
                 const isFinalStepComplete = status === FarmTransactionStatus.SUCCESS && steps.length === pendingStep + 1
 
-                const newSteps = transaction.nonBscFarm.steps.map((step, index) => {
+                const newSteps = transaction?.crossChainFarm?.steps?.map((step, index) => {
                   let newObj = {}
                   if (index === pendingStep) {
                     newObj = { ...step, status, tx: destinationTxHash }
@@ -141,20 +156,24 @@ export const Updater: React.FC<{ chainId: number }> = ({ chainId }) => {
                   return { ...step, ...newObj }
                 })
 
+                const newStatus = isFinalStepComplete
+                  ? FarmTransactionStatus.SUCCESS
+                  : transaction?.crossChainFarm?.status
+
                 dispatch(
                   finalizeTransaction({
                     chainId,
                     hash: transaction.hash,
-                    receipt: { ...transaction.receipt },
-                    nonBscFarm: {
-                      ...transaction.nonBscFarm,
-                      steps: newSteps,
-                      status: isFinalStepComplete ? FarmTransactionStatus.SUCCESS : transaction.nonBscFarm.status,
+                    receipt: { ...transaction.receipt! },
+                    crossChainFarm: {
+                      ...transaction.crossChainFarm!,
+                      ...(newSteps && { steps: newSteps }),
+                      ...(newStatus && { status: newStatus }),
                     },
                   }),
                 )
 
-                const isStakeType = transactions[hash].nonBscFarm.type === NonBscFarmStepType.STAKE
+                const isStakeType = transactions[hash]?.crossChainFarm?.type === CrossChainFarmStepType.STAKE
                 if (isFinalStepComplete) {
                   const toastTitle = isStakeType ? t('Staked!') : t('Unstaked!')
                   toastSuccess(
@@ -175,7 +194,7 @@ export const Updater: React.FC<{ chainId: number }> = ({ chainId }) => {
                         <Text
                           as="span"
                           bold
-                        >{`${transaction.nonBscFarm.amount} ${transaction.nonBscFarm.lpSymbol}`}</Text>
+                        >{`${transaction?.crossChainFarm?.amount} ${transaction?.crossChainFarm?.lpSymbol}`}</Text>
                         <Text as="span" ml="4px">
                           {errorText}
                         </Text>
@@ -191,14 +210,15 @@ export const Updater: React.FC<{ chainId: number }> = ({ chainId }) => {
         }
       })
     },
-    {
-      refreshInterval: FAST_INTERVAL,
-      errorRetryInterval: FAST_INTERVAL,
-      onError: (error) => {
-        console.error('[ERROR] updater checking non BSC farm transaction error: ', error)
-      },
-    },
-  )
+
+    enabled: Boolean(chainId && crossChainFarmPendingTxns?.length),
+    refetchInterval: FAST_INTERVAL,
+    retryDelay: FAST_INTERVAL,
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  })
 
   return null
 }

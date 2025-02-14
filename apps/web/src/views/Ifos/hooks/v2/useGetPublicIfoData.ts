@@ -1,20 +1,21 @@
 import BigNumber from 'bignumber.js'
 import { useState, useCallback } from 'react'
 import { BSC_BLOCK_TIME } from 'config'
-import ifoV2Abi from 'config/abi/ifoV2.json'
+import { ifoV2ABI } from 'config/abi/ifoV2'
 import { bscTokens } from '@pancakeswap/tokens'
-import { Ifo, IfoStatus } from 'config/constants/types'
-import { FixedNumber } from '@ethersproject/bignumber'
+import { Ifo, IfoStatus } from '@pancakeswap/ifos'
 
-import { useLpTokenPrice, usePriceCakeBusd } from 'state/farms/hooks'
+import { useLpTokenPrice } from 'state/farms/hooks'
+import { useCakePrice } from 'hooks/useCakePrice'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
-import { multicallv2 } from 'utils/multicall'
+import { publicClient } from 'utils/wagmi'
+import { ChainId } from '@pancakeswap/chains'
 import { PublicIfoData } from '../../types'
 import { getStatus } from '../helpers'
 
 // https://github.com/pancakeswap/pancake-contracts/blob/master/projects/ifo/contracts/IFOV2.sol#L431
 // 1,000,000,000 / 100
-const TAX_PRECISION = FixedNumber.from(10000000000)
+const TAX_PRECISION = new BigNumber(10000000000)
 
 const formatPool = (pool) => ({
   raisingAmountPool: pool ? new BigNumber(pool[0].toString()) : BIG_ZERO,
@@ -30,9 +31,9 @@ const formatPool = (pool) => ({
  */
 const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
   const { address } = ifo
-  const cakePriceUsd = usePriceCakeBusd()
+  const cakePrice = useCakePrice()
   const lpTokenPriceInUsd = useLpTokenPrice(ifo.currency.symbol)
-  const currencyPriceInUSD = ifo.currency === bscTokens.cake ? cakePriceUsd : lpTokenPriceInUsd
+  const currencyPriceInUSD = ifo.currency === bscTokens.cake ? cakePrice : lpTokenPriceInUsd
 
   const [state, setState] = useState({
     isInitialized: false,
@@ -65,50 +66,58 @@ const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
 
   const fetchIfoData = useCallback(
     async (currentBlock: number) => {
+      const client = publicClient({ chainId: ChainId.BSC })
       const [startBlock, endBlock, poolBasic, poolUnlimited, taxRate, numberPoints, thresholdPoints] =
-        await multicallv2({
-          abi: ifoV2Abi,
-          calls: [
+        await client.multicall({
+          contracts: [
             {
+              abi: ifoV2ABI,
               address,
-              name: 'startBlock',
+              functionName: 'startBlock',
             },
             {
+              abi: ifoV2ABI,
               address,
-              name: 'endBlock',
+              functionName: 'endBlock',
             },
             {
+              abi: ifoV2ABI,
               address,
-              name: 'viewPoolInformation',
-              params: [0],
+              functionName: 'viewPoolInformation',
+              args: [0n],
             },
             {
+              abi: ifoV2ABI,
               address,
-              name: 'viewPoolInformation',
-              params: [1],
+              functionName: 'viewPoolInformation',
+              args: [1n],
             },
             {
+              abi: ifoV2ABI,
               address,
-              name: 'viewPoolTaxRateOverflow',
-              params: [1],
+              functionName: 'viewPoolTaxRateOverflow',
+              args: [1n],
             },
             {
+              abi: ifoV2ABI,
               address,
-              name: 'numberPoints',
+              functionName: 'numberPoints',
             },
             {
+              abi: ifoV2ABI,
               address,
-              name: 'thresholdPoints',
+              functionName: 'thresholdPoints',
             },
-          ].filter(Boolean),
+          ],
+          allowFailure: false,
         })
 
       const poolBasicFormatted = formatPool(poolBasic)
       const poolUnlimitedFormatted = formatPool(poolUnlimited)
 
-      const startBlockNum = startBlock ? startBlock[0].toNumber() : 0
-      const endBlockNum = endBlock ? endBlock[0].toNumber() : 0
-      const taxRateNum = taxRate ? FixedNumber.from(taxRate[0]).divUnsafe(TAX_PRECISION).toUnsafeFloat() : 0
+      const startBlockNum = startBlock ? Number(startBlock) : 0
+      const endBlockNum = endBlock ? Number(endBlock) : 0
+      const taxRateNum = taxRate ? new BigNumber(taxRate.toString()).div(TAX_PRECISION).toNumber() : 0
 
       const status = getStatus(currentBlock, startBlockNum, endBlockNum)
       const totalBlocks = endBlockNum - startBlockNum
@@ -117,29 +126,32 @@ const useGetPublicIfoData = (ifo: Ifo): PublicIfoData => {
       // Calculate the total progress until finished or until start
       const progress = status === 'live' ? ((currentBlock - startBlockNum) / totalBlocks) * 100 : null
 
-      setState((prev) => ({
-        ...prev,
-        isInitialized: true,
-        secondsUntilEnd: blocksRemaining * BSC_BLOCK_TIME,
-        secondsUntilStart: (startBlockNum - currentBlock) * BSC_BLOCK_TIME,
-        poolBasic: {
-          ...poolBasicFormatted,
-          taxRate: 0,
-        },
-        poolUnlimited: { ...poolUnlimitedFormatted, taxRate: taxRateNum },
-        status,
-        progress,
-        blocksRemaining,
-        startBlockNum,
-        endBlockNum,
-        thresholdPoints: thresholdPoints && thresholdPoints[0],
-        numberPoints: numberPoints ? numberPoints[0].toNumber() : 0,
-      }))
+      setState(
+        (prev) =>
+          ({
+            ...prev,
+            isInitialized: true,
+            secondsUntilEnd: blocksRemaining * BSC_BLOCK_TIME,
+            secondsUntilStart: (startBlockNum - currentBlock) * BSC_BLOCK_TIME,
+            poolBasic: {
+              ...poolBasicFormatted,
+              taxRate: 0,
+            },
+            poolUnlimited: { ...poolUnlimitedFormatted, taxRate: taxRateNum },
+            status,
+            progress,
+            blocksRemaining,
+            startBlockNum,
+            endBlockNum,
+            thresholdPoints,
+            numberPoints: numberPoints ? Number(numberPoints) : 0,
+          } as any),
+      )
     },
     [address],
   )
 
-  return { ...state, currencyPriceInUSD, fetchIfoData }
+  return { ...state, currencyPriceInUSD, fetchIfoData } as any
 }
 
 export default useGetPublicIfoData

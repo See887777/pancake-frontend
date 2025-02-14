@@ -1,18 +1,16 @@
-import { Router, Currency, CurrencyAmount } from '@pancakeswap/aptos-swap-sdk'
+import { Currency, CurrencyAmount, Router } from '@pancakeswap/aptos-swap-sdk'
 import { SimulateTransactionError, UserRejectedRequestError } from '@pancakeswap/awgmi/core'
-import { log } from 'next-axiom'
-import { useCallback, useContext, useMemo, useState } from 'react'
 import { useTranslation } from '@pancakeswap/localization'
+import { useCallback, useContext, useMemo, useState } from 'react'
 
-import { useSendTransaction, useSimulateTransaction } from '@pancakeswap/awgmi'
-
+import { useUserSlippage } from '@pancakeswap/utils/user'
+import useSimulationAndSendTransaction from 'hooks/useSimulationAndSendTransaction'
 import { useTransactionAdder } from 'state/transactions/hooks'
 import { calculateSlippageAmount } from 'utils/exchange'
-import { useUserSlippage } from 'state/user'
 import { transactionErrorToUserReadableMessage } from 'utils/transactionErrorToUserReadableMessage'
 
-import { CurrencySelectorContext } from './useCurrencySelectRoute'
 import { Field, LiquidityHandlerReturn } from '../type'
+import { CurrencySelectorContext } from './useCurrencySelectRoute'
 
 interface UseAddLiquidityHandlerReturn extends LiquidityHandlerReturn {
   onAdd: () => void
@@ -28,9 +26,9 @@ export default function useAddLiquidityHandler({
   const { currencyA, currencyB } = useContext(CurrencySelectorContext)
   const { t } = useTranslation()
   const addTransaction = useTransactionAdder()
-  const { simulateTransactionAsync } = useSimulateTransaction()
-  const { sendTransactionAsync } = useSendTransaction()
+
   const [allowedSlippage] = useUserSlippage() // custom from users
+  const executeTransaction = useSimulationAndSendTransaction()
 
   const [{ attemptingTxn, liquidityErrorMessage, txHash }, setLiquidityState] = useState<{
     attemptingTxn: boolean
@@ -66,14 +64,8 @@ export default function useAddLiquidityHandler({
       currencyA.wrapped.address,
       currencyB.wrapped.address,
     )
-    console.info(payload, 'payload')
 
-    let results
-    // eslint-disable-next-line consistent-return
-    try {
-      results = await simulateTransactionAsync({ payload })
-    } catch (error) {
-      log.error('Add Liquidity Simulation Error', { error, payload })
+    executeTransaction(payload, (error) => {
       if (error instanceof SimulateTransactionError) {
         setLiquidityState({
           attemptingTxn: false,
@@ -81,14 +73,6 @@ export default function useAddLiquidityHandler({
           txHash: undefined,
         })
       }
-    }
-
-    const options = Array.isArray(results) ? { max_gas_amount: results[0].max_gas_amount } : undefined
-
-    // eslint-disable-next-line consistent-return
-    return sendTransactionAsync({
-      payload,
-      options,
     })
       .then((response) => {
         setLiquidityState({ attemptingTxn: false, liquidityErrorMessage: undefined, txHash: response.hash })
@@ -106,7 +90,6 @@ export default function useAddLiquidityHandler({
         })
       })
       .catch((err) => {
-        log.error('Add Liquidity Error', { error: err, payload })
         console.error(`Add Liquidity failed`, { err }, payload)
 
         let errorMsg = ''
@@ -124,16 +107,15 @@ export default function useAddLiquidityHandler({
         })
       })
   }, [
-    addTransaction,
     currencyA,
     currencyB,
-    parsedAmounts,
-    sendTransactionAsync,
-    simulateTransactionAsync,
-    t,
+    parsedAAmount?.quotient,
+    parsedBAmount?.quotient,
     amountsMin,
-    parsedAAmount,
-    parsedBAmount,
+    executeTransaction,
+    parsedAmounts,
+    addTransaction,
+    t,
   ])
 
   return useMemo(

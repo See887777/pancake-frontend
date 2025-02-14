@@ -1,10 +1,10 @@
-import BigNumber from 'bignumber.js'
 import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
 import { createSelector } from '@reduxjs/toolkit'
+import BigNumber from 'bignumber.js'
+import { VaultPosition, getVaultPosition } from '../../utils/cakePool'
 import { State, VaultKey } from '../types'
 import { transformPool, transformVault } from './helpers'
 import { initialPoolVaultState } from './index'
-import { getVaultPosition, VaultPosition } from '../../utils/cakePool'
 
 const selectPoolsData = (state: State) => state.pools.data
 const selectPoolData = (sousId) => (state: State) => state.pools.data.find((p) => p.sousId === sousId)
@@ -13,9 +13,9 @@ const selectVault = (key: VaultKey) => (state: State) => key ? state.pools[key] 
 const selectIfo = (state: State) => state.pools.ifo
 const selectIfoUserCredit = (state: State) => state.pools.ifo.credit ?? BIG_ZERO
 
-export const makePoolWithUserDataLoadingSelector = (sousId) =>
+export const makePoolWithUserDataLoadingSelector = (sousId: number) =>
   createSelector([selectPoolData(sousId), selectUserDataLoaded], (pool, userDataLoaded) => {
-    return { pool: transformPool(pool), userDataLoaded }
+    return { pool: pool ? transformPool(pool) : undefined, userDataLoaded }
   })
 
 export const poolsWithUserDataLoadingSelector = createSelector(
@@ -38,7 +38,7 @@ export const poolsWithVaultSelector = createSelector(
     const cakePool = pools.find((pool) => !pool.isFinished && pool.sousId === 0)
     const withoutCakePool = pools.filter((pool) => pool.sousId !== 0)
 
-    const cakeAutoVault = {
+    const cakeAutoVault = cakePool && {
       ...cakePool,
       ...deserializedLockedCakeVault,
       vaultKey: VaultKey.CakeVault,
@@ -46,10 +46,11 @@ export const poolsWithVaultSelector = createSelector(
     }
 
     const lockedVaultPosition = getVaultPosition(deserializedLockedCakeVault.userData)
-    const hasFlexibleSideSharesStaked = deserializedFlexibleSideCakeVault.userData.userShares.gt(0)
+    const hasFlexibleSideSharesStaked =
+      deserializedFlexibleSideCakeVault?.userData && deserializedFlexibleSideCakeVault.userData.userShares.gt(0)
 
     const cakeAutoFlexibleSideVault =
-      lockedVaultPosition > VaultPosition.Flexible || hasFlexibleSideSharesStaked
+      cakePool && (lockedVaultPosition > VaultPosition.Flexible || hasFlexibleSideSharesStaked)
         ? [
             {
               ...cakePool,
@@ -60,7 +61,11 @@ export const poolsWithVaultSelector = createSelector(
           ]
         : []
 
-    return { pools: [cakeAutoVault, ...cakeAutoFlexibleSideVault, ...withoutCakePool], userDataLoaded }
+    const allPools = [...cakeAutoFlexibleSideVault, ...withoutCakePool]
+    if (cakeAutoVault) {
+      allPools.unshift(cakeAutoVault)
+    }
+    return { pools: allPools, userDataLoaded }
   },
 )
 

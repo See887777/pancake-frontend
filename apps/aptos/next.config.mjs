@@ -1,30 +1,13 @@
-import transpileModules from 'next-transpile-modules'
 import bundleAnalyzer from '@next/bundle-analyzer'
-import { withAxiom } from 'next-axiom'
 
+import { withWebSecurityHeaders } from '@pancakeswap/next-config/withWebSecurityHeaders'
 import { createVanillaExtractPlugin } from '@vanilla-extract/next-plugin'
+import { RetryChunkLoadPlugin } from 'webpack-retry-chunk-load-plugin'
 
 const withVanillaExtract = createVanillaExtractPlugin()
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
 })
-
-const withTH = transpileModules([
-  '@pancakeswap/ui',
-  '@pancakeswap/uikit',
-  '@pancakeswap/localization',
-  '@pancakeswap/hooks',
-  '@pancakeswap/awgmi',
-  '@pancakeswap/utils',
-  '@pancakeswap/token-lists',
-  '@pancakeswap/tokens',
-  '@pancakeswap/farms',
-])
-
-const blocksPage =
-  process.env.NODE_ENV === 'production'
-    ? ['/farms', '/farms/history', '/ifo', '/ifo/history', '/pools', '/pools/history']
-    : []
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -33,6 +16,19 @@ const nextConfig = {
   compiler: {
     styledComponents: true,
   },
+  transpilePackages: [
+    '@pancakeswap/localization',
+    '@pancakeswap/hooks',
+    '@pancakeswap/utils',
+    '@pancakeswap/tokens',
+    '@pancakeswap/farms',
+    '@pancakeswap/widgets-internal',
+    // https://github.com/TanStack/query/issues/6560#issuecomment-1975771676
+    '@tanstack/query-core',
+  ],
+  experimental: {
+    optimizePackageImports: ['@pancakeswap/widgets-internal', '@pancakeswap/uikit'],
+  },
   async redirects() {
     return [
       {
@@ -40,13 +36,22 @@ const nextConfig = {
         destination: '/swap',
         permanent: false,
       },
-      ...blocksPage.map((p) => ({
-        source: p,
-        destination: '/404',
-        permanent: false,
-      })),
     ]
+  },
+  webpack: (webpackConfig) => {
+    webpackConfig.plugins.push(
+        new RetryChunkLoadPlugin({
+          cacheBust: `function() {
+          return 'cache-bust=' + Date.now();
+        }`,
+          retryDelay: `function(retryAttempt) {
+          return 2 ** (retryAttempt - 1) * 500;
+        }`,
+          maxRetries: 5,
+        }),
+    )
+    return webpackConfig
   },
 }
 
-export default withBundleAnalyzer(withVanillaExtract(withTH(withAxiom(nextConfig))))
+export default withBundleAnalyzer(withVanillaExtract(withWebSecurityHeaders(nextConfig)))

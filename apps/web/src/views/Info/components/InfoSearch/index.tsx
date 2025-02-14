@@ -1,19 +1,18 @@
-import { Flex, Input, Skeleton, Text, useMatchBreakpoints } from '@pancakeswap/uikit'
-import { useTranslation } from '@pancakeswap/localization'
 import { useDebounce } from '@pancakeswap/hooks'
+import { useTranslation } from '@pancakeswap/localization'
+import { Flex, Input, Skeleton, Text, useMatchBreakpoints } from '@pancakeswap/uikit'
 import { MINIMUM_SEARCH_CHARACTERS } from 'config/constants/info'
 import orderBy from 'lodash/orderBy'
 import { useRouter } from 'next/router'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMultiChainPath, usePoolDatasSWR, useTokenDatasSWR, useGetChainName } from 'state/info/hooks'
-import { checkIsStableSwap } from 'state/info/constant'
+
+import { checkIsStableSwap, multiChainId } from 'state/info/constant'
+import { useChainNameByQuery, useMultiChainPath } from 'state/info/hooks'
 import useFetchSearchResults from 'state/info/queries/search'
-import { PoolData } from 'state/info/types'
-import { useWatchlistPools, useWatchlistTokens } from 'state/user/hooks'
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { formatAmount } from 'utils/formatInfoNumbers'
+import { getTokenNameAlias, getTokenSymbolAlias } from 'utils/getTokenAlias'
 import { CurrencyLogo, DoubleCurrencyLogo } from 'views/Info/components/CurrencyLogo'
-import SaveIcon from 'views/Info/components/SaveIcon'
 
 const Container = styled.div`
   position: relative;
@@ -89,14 +88,14 @@ const HoverText = styled.div`
   color: ${({ theme }) => theme.colors.secondary};
   display: block;
   margin-top: 16px;
-  :hover {
+  &:hover {
     cursor: pointer;
     opacity: 0.6;
   }
 `
 
 const HoverRowLink = styled.div`
-  :hover {
+  &:hover {
     cursor: pointer;
     opacity: 0.6;
   }
@@ -114,46 +113,29 @@ const OptionButton = styled.div<{ enabled: boolean }>`
   align-items: center;
   background-color: ${({ theme, enabled }) => (enabled ? theme.colors.primary : 'transparent')};
   color: ${({ theme, enabled }) => (enabled ? theme.card.background : theme.colors.secondary)};
-  :hover {
+  &:hover {
     opacity: 0.6;
     cursor: pointer;
   }
 `
-type BasicTokenData = {
-  address: string
-  symbol: string
-  name: string
-}
-const tokenIncludesSearchTerm = (token: BasicTokenData, value: string) => {
-  return (
-    token.address.toLowerCase().includes(value.toLowerCase()) ||
-    token.symbol.toLowerCase().includes(value.toLowerCase()) ||
-    token.name.toLowerCase().includes(value.toLowerCase())
-  )
-}
-
-const poolIncludesSearchTerm = (pool: PoolData, value: string) => {
-  return (
-    pool.address.toLowerCase().includes(value.toLowerCase()) ||
-    tokenIncludesSearchTerm(pool.token0, value) ||
-    tokenIncludesSearchTerm(pool.token1, value)
-  )
-}
 
 const Search = () => {
   const router = useRouter()
   const { isXs, isSm } = useMatchBreakpoints()
   const { t } = useTranslation()
+  const chainName = useChainNameByQuery()
+  const chainId = multiChainId[chainName]
 
   const inputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const showMoreRef = useRef<HTMLDivElement>(null)
+  const showMoreTokenRef = useRef<HTMLDivElement>(null)
+  const showMorePoolRef = useRef<HTMLDivElement>(null)
 
   const [showMenu, setShowMenu] = useState(false)
   const [value, setValue] = useState('')
   const debouncedSearchTerm = useDebounce(value, 600)
 
-  const { tokens, pools, tokensLoading, poolsLoading, error } = useFetchSearchResults(debouncedSearchTerm)
+  const { tokens, pools, tokensLoading, poolsLoading, error } = useFetchSearchResults(debouncedSearchTerm, showMenu)
 
   const [tokensShown, setTokensShown] = useState(3)
   const [poolsShown, setPoolsShown] = useState(3)
@@ -166,9 +148,10 @@ const Search = () => {
   const handleOutsideClick = (e: any) => {
     const menuClick = menuRef.current && menuRef.current.contains(e.target)
     const inputCLick = inputRef.current && inputRef.current.contains(e.target)
-    const showMoreClick = showMoreRef.current && showMoreRef.current.contains(e.target)
+    const showMoreTokenClick = showMoreTokenRef.current && showMoreTokenRef.current.contains(e.target)
+    const showMorePoolClick = showMorePoolRef.current && showMorePoolRef.current.contains(e.target)
 
-    if (!menuClick && !inputCLick && !showMoreClick) {
+    if (!menuClick && !inputCLick && !showMoreTokenClick && !showMorePoolClick) {
       setPoolsShown(3)
       setTokensShown(3)
       setShowMenu(false)
@@ -176,22 +159,21 @@ const Search = () => {
   }
 
   useEffect(() => {
-    if (showMenu) {
-      document.addEventListener('click', handleOutsideClick)
-      document.querySelector('body').style.overflow = 'hidden'
-    } else {
-      document.removeEventListener('click', handleOutsideClick)
-      document.querySelector('body').style.overflow = 'visible'
+    const htmlBodyElement = document.querySelector('body')
+    if (htmlBodyElement) {
+      if (showMenu) {
+        document.addEventListener('click', handleOutsideClick)
+        htmlBodyElement.style.overflow = 'hidden'
+      } else {
+        document.removeEventListener('click', handleOutsideClick)
+        htmlBodyElement.style.overflow = 'visible'
+      }
+      return () => {
+        document.removeEventListener('click', handleOutsideClick)
+      }
     }
-
-    return () => {
-      document.removeEventListener('click', handleOutsideClick)
-    }
+    return undefined
   }, [showMenu])
-
-  // watchlist
-  const [savedTokens, addSavedToken] = useWatchlistTokens()
-  const [savedPools, addSavedPool] = useWatchlistPools()
 
   const handleItemClick = (to: string) => {
     setShowMenu(false)
@@ -200,64 +182,45 @@ const Search = () => {
     router.push(to)
   }
 
-  // get date for watchlist
-  const watchListTokenData = useTokenDatasSWR(savedTokens)
-  const watchListPoolData = usePoolDatasSWR(savedPools)
-  const watchListPoolLoading = watchListPoolData.length !== savedPools.length
-
   // filter on view
-  const [showWatchlist, setShowWatchlist] = useState(false)
   const tokensForList = useMemo(() => {
-    if (showWatchlist) {
-      return watchListTokenData.filter((token) => tokenIncludesSearchTerm(token, value))
-    }
-    return orderBy(tokens, (token) => token.volumeUSD, 'desc')
-  }, [showWatchlist, tokens, watchListTokenData, value])
+    return orderBy(tokens, (token) => token.tvlUSD, 'desc')
+  }, [tokens])
 
   const poolForList = useMemo(() => {
-    if (showWatchlist) {
-      return watchListPoolData.filter((pool) => poolIncludesSearchTerm(pool, value))
-    }
-    return orderBy(pools, (pool) => pool.volumeUSD, 'desc')
-  }, [pools, showWatchlist, watchListPoolData, value])
+    return orderBy(pools, (pool) => pool?.tvlUSD, 'desc')
+  }, [pools])
 
   const contentUnderTokenList = () => {
     const isLoading = tokensLoading
     const noTokensFound =
       tokensForList.length === 0 && !isLoading && debouncedSearchTerm.length >= MINIMUM_SEARCH_CHARACTERS
-    const noWatchlistTokens = tokensForList.length === 0 && !isLoading
-    const showMessage = showWatchlist ? noWatchlistTokens : noTokensFound
+    const showMessage = noTokensFound
     const noTokensMessage = t('No results')
     return (
       <>
         {isLoading && <Skeleton />}
         {showMessage && <Text>{noTokensMessage}</Text>}
-        {!showWatchlist && debouncedSearchTerm.length < MINIMUM_SEARCH_CHARACTERS && (
-          <Text>{t('Search pools or tokens')}</Text>
-        )}
+        {debouncedSearchTerm.length < MINIMUM_SEARCH_CHARACTERS && <Text>{t('Search liquidity pairs or tokens')}</Text>}
       </>
     )
   }
 
   const contentUnderPoolList = () => {
-    const isLoading = showWatchlist ? watchListPoolLoading : poolsLoading
+    const isLoading = poolsLoading
     const noPoolsFound =
       poolForList.length === 0 && !poolsLoading && debouncedSearchTerm.length >= MINIMUM_SEARCH_CHARACTERS
-    const noWatchlistPools = poolForList.length === 0 && !isLoading
-    const showMessage = showWatchlist ? noWatchlistPools : noPoolsFound
-    const noPoolsMessage = showWatchlist ? t('Saved tokens will appear here') : t('No results')
+    const showMessage = noPoolsFound
+    const noPoolsMessage = t('No results')
     return (
       <>
         {isLoading && <Skeleton />}
         {showMessage && <Text>{noPoolsMessage}</Text>}
-        {!showWatchlist && debouncedSearchTerm.length < MINIMUM_SEARCH_CHARACTERS && (
-          <Text>{t('Search pools or tokens')}</Text>
-        )}
+        {debouncedSearchTerm.length < MINIMUM_SEARCH_CHARACTERS && <Text>{t('Search liquidity pairs or tokens')}</Text>}
       </>
     )
   }
   const chainPath = useMultiChainPath()
-  const chainName = useGetChainName()
   const stableSwapQuery = checkIsStableSwap() ? '?type=stableSwap' : ''
   return (
     <>
@@ -269,7 +232,7 @@ const Search = () => {
           onChange={(e) => {
             setValue(e.target.value)
           }}
-          placeholder={t('Search pools or tokens')}
+          placeholder={t('Search liquidity pairs or tokens')}
           ref={inputRef}
           onFocus={() => {
             setShowMenu(true)
@@ -278,12 +241,7 @@ const Search = () => {
         {showMenu && (
           <Menu ref={menuRef}>
             <Flex mb="16px">
-              <OptionButton enabled={!showWatchlist} onClick={() => setShowWatchlist(false)}>
-                {t('Search')}
-              </OptionButton>
-              <OptionButton enabled={showWatchlist} onClick={() => setShowWatchlist(true)}>
-                {t('Watchlist')}
-              </OptionButton>
+              <OptionButton enabled>{t('Search')}</OptionButton>
             </Flex>
             {error && <Text color="failure">{t('Error occurred, please try again')}</Text>}
 
@@ -296,11 +254,11 @@ const Search = () => {
                   {t('Price')}
                 </Text>
               )}
-              {!isXs && !isSm && (
+              {/* {!isXs && !isSm && (
                 <Text textAlign="end" fontSize="12px">
                   {t('Volume 24H')}
                 </Text>
-              )}
+              )} */}
               {!isXs && !isSm && (
                 <Text textAlign="end" fontSize="12px">
                   {t('Liquidity')}
@@ -317,43 +275,36 @@ const Search = () => {
                     <Flex>
                       <CurrencyLogo address={token.address} chainName={chainName} />
                       <Text ml="10px">
-                        <Text>{`${token.name} (${token.symbol})`}</Text>
+                        <Text>{`${token.address && getTokenNameAlias(token.address, chainId, token.name)} (${
+                          token.address && getTokenSymbolAlias(token.address, chainId, token.symbol)
+                        })`}</Text>
                       </Text>
-                      <SaveIcon
-                        id="watchlist-icon"
-                        style={{ marginLeft: '8px' }}
-                        fill={savedTokens.includes(token.address)}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          addSavedToken(token.address)
-                        }}
-                      />
                     </Flex>
                     {!isXs && !isSm && <Text textAlign="end">${formatAmount(token.priceUSD)}</Text>}
-                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(token.volumeUSD)}</Text>}
-                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(token.liquidityUSD)}</Text>}
+                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(token.tvlUSD)}</Text>}
                   </ResponsiveGrid>
                 </HoverRowLink>
               )
             })}
             {contentUnderTokenList()}
-            {tokensForList.length > tokensShown && (
-              <HoverText
-                onClick={() => {
-                  setTokensShown(tokensShown + 5)
-                }}
-                ref={showMoreRef}
-              >
-                {t('See more...')}
-              </HoverText>
-            )}
+
+            <HoverText
+              onClick={() => {
+                if (tokensShown + 5 < tokensForList.length) setTokensShown(tokensShown + 5)
+                else setTokensShown(tokensForList.length)
+              }}
+              ref={showMoreTokenRef}
+              style={{ ...(tokensForList.length <= tokensShown && { display: 'none' }) }}
+            >
+              {t('See more...')}
+            </HoverText>
 
             <Break />
             <ResponsiveGrid>
               <Text bold color="secondary" mb="8px">
-                {t('Pools')}
+                {t('Pairs')}
               </Text>
-              {!isXs && !isSm && (
+              {/* {!isXs && !isSm && (
                 <Text textAlign="end" fontSize="12px">
                   {t('Volume 24H')}
                 </Text>
@@ -362,7 +313,7 @@ const Search = () => {
                 <Text textAlign="end" fontSize="12px">
                   {t('Volume 7D')}
                 </Text>
-              )}
+              )} */}
               {!isXs && !isSm && (
                 <Text textAlign="end" fontSize="12px">
                   {t('Liquidity')}
@@ -372,47 +323,40 @@ const Search = () => {
             {poolForList.slice(0, poolsShown).map((p) => {
               return (
                 <HoverRowLink
-                  onClick={() => handleItemClick(`/info${chainPath}/pools/${p.address}${stableSwapQuery}`)}
-                  key={`searchPoolResult${p.address}`}
+                  onClick={() => handleItemClick(`/info${chainPath}/pairs/${p?.address}${stableSwapQuery}`)}
+                  key={`searchPoolResult${p?.address}`}
                 >
                   <ResponsiveGrid>
                     <Flex>
                       <DoubleCurrencyLogo
-                        address0={p.token0.address}
-                        address1={p.token1.address}
+                        address0={p?.token0.address}
+                        address1={p?.token1.address}
                         chainName={chainName}
                       />
                       <Text ml="10px" style={{ whiteSpace: 'nowrap' }}>
-                        <Text>{`${p.token0.symbol} / ${p.token1.symbol}`}</Text>
+                        <Text>{`${p && getTokenSymbolAlias(p.token0.address, chainId, p.token0.symbol)} / ${
+                          p && getTokenSymbolAlias(p.token1.address, chainId, p.token1.symbol)
+                        }`}</Text>
                       </Text>
-                      <SaveIcon
-                        id="watchlist-icon"
-                        style={{ marginLeft: '10px' }}
-                        fill={savedPools.includes(p.address)}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          addSavedPool(p.address)
-                        }}
-                      />
                     </Flex>
-                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(p.volumeUSD)}</Text>}
-                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(p.volumeUSDWeek)}</Text>}
-                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(p.liquidityUSD)}</Text>}
+                    {/* {!isXs && !isSm && <Text textAlign="end">${formatAmount(p?.volumeUSD)}</Text>}
+                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(p?.volumeUSDWeek)}</Text>} */}
+                    {!isXs && !isSm && <Text textAlign="end">${formatAmount(p?.tvlUSD)}</Text>}
                   </ResponsiveGrid>
                 </HoverRowLink>
               )
             })}
             {contentUnderPoolList()}
-            {poolForList.length > poolsShown && (
-              <HoverText
-                onClick={() => {
-                  setPoolsShown(poolsShown + 5)
-                }}
-                ref={showMoreRef}
-              >
-                {t('See more...')}
-              </HoverText>
-            )}
+            <HoverText
+              onClick={() => {
+                if (poolsShown + 5 < poolForList.length) setPoolsShown(poolsShown + 5)
+                else setPoolsShown(poolForList.length)
+              }}
+              ref={showMorePoolRef}
+              style={{ ...(poolForList.length <= poolsShown && { display: 'none' }) }}
+            >
+              {t('See more...')}
+            </HoverText>
           </Menu>
         )}
       </Container>

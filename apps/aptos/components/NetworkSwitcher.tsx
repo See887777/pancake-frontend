@@ -1,15 +1,22 @@
+import { ChainId } from '@pancakeswap/aptos-swap-sdk'
 import { useNetwork } from '@pancakeswap/awgmi'
 import { useIsMounted } from '@pancakeswap/hooks'
 import { useTranslation } from '@pancakeswap/localization'
 import { Box, Text, UserMenu, UserMenuDivider, UserMenuItem } from '@pancakeswap/uikit'
-
-import { APEX_DOMAIN } from 'config'
+import { APEX_DOMAIN, ASSETS_CDN } from 'config'
 import { defaultChain } from 'config/chains'
-import Image from 'next/future/image'
+import Image from 'next/image'
+import { aptosLogoClass } from './Logo/CurrencyLogo.css'
 
 const evmChains = [
-  { id: 56, name: 'BNB Smart Chain' },
-  { id: 1, name: 'Ethereum' },
+  { id: 56, name: 'BNB Chain', chainName: 'bsc' },
+  { id: 1, name: 'Ethereum', chainName: 'eth' },
+  { id: 324, name: 'zkSync Era', chainName: 'zkSync' },
+  { id: 1101, name: 'Polygon zkEVM', chainName: 'polygonZkEVM' },
+  { id: 42161, name: 'Arbitrum One', chainName: 'arb' },
+  { id: 59144, name: 'Linea', chainName: 'linea' },
+  { id: 8453, name: 'Base', chainName: 'base' },
+  { id: 204, name: 'opBNB Mainnet', chainName: 'opBNB' },
 ]
 
 const NetworkSelect = () => {
@@ -27,10 +34,10 @@ const NetworkSelect = () => {
           style={{ justifyContent: 'flex-start' }}
           as="a"
           target="_blank"
-          href={`${APEX_DOMAIN}?chainId=${chain.id}`}
+          href={`${APEX_DOMAIN}?chain=${chain.chainName}`}
         >
           <Image
-            src={`${APEX_DOMAIN}/images/chains/${chain.id}.png`}
+            src={`${ASSETS_CDN}/web/chains/${chain.id}.png`}
             width={24}
             height={24}
             unoptimized
@@ -56,12 +63,15 @@ export const NetworkSwitcher = () => {
     <UserMenu
       mr="8px"
       variant="default"
-      avatarSrc="/images/apt.png"
+      avatarSrc="https://tokens.pancakeswap.finance/images/symbol/apt.png"
+      avatarClassName={aptosLogoClass({
+        isProduction: isMounted && chain?.id === ChainId.MAINNET,
+      })}
       placement="bottom"
       text={
         <>
           <Box display={['none', null, null, null, null, 'block']}>
-            Aptos{isMounted && chain?.testnet && chain?.name ? ` ${chain?.name}` : ''}
+            {`Aptos${isMounted && chain?.testnet && chain?.name ? ` ${chain?.name}` : ''}`}
           </Box>
           <Box display={['block', null, null, null, null, 'none']}>APT</Box>
         </>

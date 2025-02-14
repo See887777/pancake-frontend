@@ -1,7 +1,9 @@
-import { useEffect, useReducer, useRef, useCallback } from 'react'
+import { ERC20Token, MaxUint256 } from '@pancakeswap/sdk'
 import noop from 'lodash/noop'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { Address, TransactionReceipt } from 'viem'
 import { useAccount } from 'wagmi'
-import { TransactionReceipt, TransactionResponse } from '@ethersproject/providers'
+import { ApprovalState, useApproveCallbackFromAmount } from './useApproveCallback'
 import useCatchTxError from './useCatchTxError'
 
 type LoadingState = 'idle' | 'loading' | 'success' | 'fail'
@@ -66,30 +68,53 @@ interface OnSuccessProps {
   receipt: TransactionReceipt
 }
 
-interface ApproveConfirmTransaction {
-  onApprove: () => Promise<TransactionResponse>
-  onConfirm: (params?) => Promise<TransactionResponse>
-  onRequiresApproval?: () => Promise<boolean>
-  onSuccess: ({ state, receipt }: OnSuccessProps) => void
-  onApproveSuccess?: ({ state, receipt }: OnSuccessProps) => void
+type CustomApproveProps = {
+  onRequiresApproval: () => Promise<boolean>
+  onApprove: () => Promise<{ hash: Address } | undefined> | undefined
 }
 
+type ERC20TokenApproveProps = {
+  token?: ERC20Token
+  minAmount?: bigint
+  targetAmount?: bigint
+  spender?: Address
+}
+
+type ApproveConfirmTransaction = {
+  onConfirm: (params?) => Promise<{ hash: Address }> | undefined
+  onSuccess: ({ state, receipt }: OnSuccessProps) => void
+  onApproveSuccess?: ({ state, receipt }: OnSuccessProps) => void
+} & (CustomApproveProps | ERC20TokenApproveProps)
+
 const useApproveConfirmTransaction = ({
-  onApprove,
   onConfirm,
-  onRequiresApproval,
   onSuccess = noop,
   onApproveSuccess = noop,
+  ...props
 }: ApproveConfirmTransaction) => {
+  const { onApprove, onRequiresApproval } =
+    props && 'onApprove' in props ? props : { onRequiresApproval: undefined, onApprove: undefined }
+  const { minAmount, spender, token, targetAmount } =
+    props && !('onApprove' in props)
+      ? props
+      : { minAmount: 0n, spender: undefined, token: undefined, targetAmount: MaxUint256 }
+
   const { address: account } = useAccount()
   const [state, dispatch] = useReducer(reducer, initialState)
   const handlePreApprove = useRef(onRequiresApproval)
+  const { approvalState, approveCallback } = useApproveCallbackFromAmount({
+    token: onRequiresApproval ? undefined : token,
+    minAmount,
+    targetAmount,
+    spender,
+    addToTransaction: false,
+  })
   const { fetchWithCatchTxError } = useCatchTxError()
 
   const handleApprove = useCallback(async () => {
-    const receipt = await fetchWithCatchTxError(() => {
+    const receipt = await fetchWithCatchTxError(async () => {
       dispatch({ type: 'approve_sending' })
-      return onApprove()
+      return onApprove ? onApprove() : approveCallback()
     })
     if (receipt?.status) {
       dispatch({ type: 'approve_receipt' })
@@ -97,11 +122,11 @@ const useApproveConfirmTransaction = ({
     } else {
       dispatch({ type: 'approve_error' })
     }
-  }, [onApprove, onApproveSuccess, state, fetchWithCatchTxError])
+  }, [fetchWithCatchTxError, onApprove, approveCallback, onApproveSuccess, state])
 
   const handleConfirm = useCallback(
     async (params = {}) => {
-      const receipt = await fetchWithCatchTxError(() => {
+      const receipt = await fetchWithCatchTxError(async () => {
         dispatch({ type: 'confirm_sending' })
         return onConfirm(params)
       })
@@ -128,10 +153,10 @@ const useApproveConfirmTransaction = ({
 
   return {
     isApproving: state.approvalState === 'loading',
-    isApproved: state.approvalState === 'success',
+    isApproved: onApprove ? state.approvalState === 'success' : approvalState === ApprovalState.APPROVED,
     isConfirming: state.confirmState === 'loading',
     isConfirmed: state.confirmState === 'success',
-    hasApproveFailed: state.approvalState === 'fail',
+    hasApproveFailed: onApprove ? state.approvalState === 'fail' : approvalState === ApprovalState.NOT_APPROVED,
     hasConfirmFailed: state.confirmState === 'fail',
     handleApprove,
     handleConfirm,

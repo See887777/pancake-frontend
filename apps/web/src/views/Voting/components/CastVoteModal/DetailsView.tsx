@@ -1,14 +1,15 @@
-import { useMemo } from 'react'
-import BigNumber from 'bignumber.js'
-import { Flex, LinkExternal, Text, Box, HelpIcon, useTooltip, RocketIcon, Link } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import styled from 'styled-components'
-import { getBlockExploreLink } from 'utils'
+import { Box, Flex, HelpIcon, Link, RocketIcon, ScanLink, Text, useTooltip } from '@pancakeswap/uikit'
 import { formatNumber } from '@pancakeswap/utils/formatBalance'
+import BigNumber from 'bignumber.js'
+import { useActiveChainId } from 'hooks/useActiveChainId'
 import useCurrentBlockTimestamp from 'hooks/useCurrentBlockTimestamp'
+import { useMemo } from 'react'
+import { styled } from 'styled-components'
+import { getBlockExploreLink } from 'utils'
 import { ModalInner, VotingBoxBorder, VotingBoxCardInner } from './styles'
 
-const StyledLinkExternal = styled(LinkExternal)`
+export const StyledScanLink = styled(ScanLink)`
   display: inline-flex;
   font-size: 14px;
   > svg {
@@ -45,10 +46,6 @@ const FixedTermCardInner = styled(Box)<{ expired?: boolean }>`
   }
 `
 
-const StyleLink = styled(Link)`
-  text-decoration: underline;
-`
-
 interface DetailsViewProps {
   total: number
   cakeBalance?: number
@@ -77,13 +74,15 @@ const DetailsView: React.FC<React.PropsWithChildren<DetailsViewProps>> = ({
   const { t } = useTranslation()
   const blockTimestamp = useCurrentBlockTimestamp()
 
+  const { chainId } = useActiveChainId()
+
   const isBoostingExpired = useMemo(() => {
-    return lockedEndTime !== 0 && new BigNumber(blockTimestamp?.toString()).gte(lockedEndTime)
+    return blockTimestamp && lockedEndTime !== undefined && new BigNumber(blockTimestamp?.toString()).gte(lockedEndTime)
   }, [blockTimestamp, lockedEndTime])
 
   const { targetRef, tooltip, tooltipVisible } = useTooltip(
     <>
-      {Number.isFinite(lockedCakeBalance) && (
+      {lockedCakeBalance && Number.isFinite(lockedCakeBalance) && (
         <Box>
           <Text>
             {isBoostingExpired
@@ -97,7 +96,9 @@ const DetailsView: React.FC<React.PropsWithChildren<DetailsViewProps>> = ({
           <Text bold m="10px 0">
             {`${t('CAKE locked:')} ${formatNumber(lockedCakeBalance, 0, 2)}`}
           </Text>
-          <StyleLink href="/pools">{t('Go to Pools')}</StyleLink>
+          <Link external href="/pools">
+            {t('Go to Pools')}
+          </Link>
         </Box>
       )}
     </>,
@@ -126,27 +127,27 @@ const DetailsView: React.FC<React.PropsWithChildren<DetailsViewProps>> = ({
       </VotingBoxBorder>
       <Text color="secondary" textTransform="uppercase" mb="4px" bold fontSize="14px">
         {t('Your voting power at block')}
-        <StyledLinkExternal href={getBlockExploreLink(block, 'block')} ml="8px">
+        <StyledScanLink useBscCoinFallback href={getBlockExploreLink(block, 'block', chainId)} ml="8px">
           {block}
-        </StyledLinkExternal>
+        </StyledScanLink>
       </Text>
-      {Number.isFinite(cakeBalance) && (
+      {cakeBalance && Number.isFinite(cakeBalance) ? (
         <Flex alignItems="center" justifyContent="space-between" mb="4px">
           <Text color="textSubtle" fontSize="16px">
             {t('Wallet')}
           </Text>
           <Text textAlign="right">{formatNumber(cakeBalance, 0, 3)}</Text>
         </Flex>
-      )}
-      {Number.isFinite(cakeVaultBalance) && (
+      ) : null}
+      {cakeVaultBalance && Number.isFinite(cakeVaultBalance) ? (
         <Flex alignItems="center" justifyContent="space-between" mb="4px">
           <Text color="textSubtle" fontSize="16px">
             {t('Flexible CAKE Staking')}
           </Text>
           <Text textAlign="right">{formatNumber(cakeVaultBalance, 0, 3)}</Text>
         </Flex>
-      )}
-      {Number.isFinite(cakePoolBalance) && (
+      ) : null}
+      {cakePoolBalance && Number.isFinite(cakePoolBalance) && (
         <>
           {lockedCakeBalance === 0 ? (
             <Flex alignItems="center" justifyContent="space-between" mb="4px">
@@ -164,8 +165,8 @@ const DetailsView: React.FC<React.PropsWithChildren<DetailsViewProps>> = ({
               </Text>
             </Flex>
           ) : (
-            <FixedTermWrapper expired={isBoostingExpired}>
-              <FixedTermCardInner expired={isBoostingExpired}>
+            <FixedTermWrapper expired={Boolean(isBoostingExpired)}>
+              <FixedTermCardInner expired={Boolean(isBoostingExpired)}>
                 <Flex>
                   <Text color="textSubtle" fontSize="16px" mr="auto">
                     {t('Fixed Term CAKE Staking')}
@@ -191,7 +192,7 @@ const DetailsView: React.FC<React.PropsWithChildren<DetailsViewProps>> = ({
           )}
         </>
       )}
-      {Number.isFinite(ifoPoolBalance) && Number(ifoPoolBalance) > 0 && (
+      {ifoPoolBalance && Number.isFinite(ifoPoolBalance) && (
         <Flex alignItems="center" justifyContent="space-between" mb="4px">
           <Text color="textSubtle" fontSize="16px">
             {t('IFO Pool')}
@@ -199,22 +200,22 @@ const DetailsView: React.FC<React.PropsWithChildren<DetailsViewProps>> = ({
           <Text textAlign="right">{formatNumber(ifoPoolBalance, 0, 3)}</Text>
         </Flex>
       )}
-      {Number.isFinite(poolsBalance) && (
+      {poolsBalance && Number.isFinite(poolsBalance) ? (
         <Flex alignItems="center" justifyContent="space-between" mb="4px">
           <Text color="textSubtle" fontSize="16px">
             {t('Other Syrup Pools')}
           </Text>
           <Text textAlign="right">{formatNumber(poolsBalance, 0, 3)}</Text>
         </Flex>
-      )}
-      {Number.isFinite(cakeBnbLpBalance) && (
+      ) : null}
+      {cakeBnbLpBalance && Number.isFinite(cakeBnbLpBalance) ? (
         <Flex alignItems="center" justifyContent="space-between" mb="4px">
           <Text color="textSubtle" fontSize="16px">
             {t('CAKE BNB LP')}
           </Text>
           <Text textAlign="right">{formatNumber(cakeBnbLpBalance, 0, 3)}</Text>
         </Flex>
-      )}
+      ) : null}
     </ModalInner>
   )
 }

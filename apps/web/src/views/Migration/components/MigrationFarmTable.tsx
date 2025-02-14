@@ -1,17 +1,16 @@
-import React, { useMemo } from 'react'
-import BigNumber from 'bignumber.js'
-import styled from 'styled-components'
+import { FarmWithStakedValue } from '@pancakeswap/farms'
 import { useTranslation } from '@pancakeswap/localization'
+import { Flex, RowType, Spinner } from '@pancakeswap/uikit'
+import { BIG_ZERO } from '@pancakeswap/utils/bigNumber'
 import { getBalanceNumber } from '@pancakeswap/utils/formatBalance'
-import { Flex, Spinner, RowType } from '@pancakeswap/uikit'
-import TableHeader from './MigrationTable/TableHeader'
+import BigNumber from 'bignumber.js'
+import React, { useMemo } from 'react'
+import { styled } from 'styled-components'
 import EmptyText from './MigrationTable/EmptyText'
 import TableStyle from './MigrationTable/StyledTable'
-import NewRow from './MigrationStep2/NewFarm/FarmRow'
-import OldRow from './MigrationStep1/OldFarm/FarmRow'
-import { FarmWithStakedValue } from '../../Farms/components/types'
-import { getDisplayApr } from '../../Farms/components/getDisplayApr'
-import { ColumnsDefTypes, DesktopV2ColumnSchema, RowProps } from './types'
+import TableHeader from './MigrationTable/TableHeader'
+import { ColumnsDefTypes, RowProps, V3Step1DesktopColumnSchema } from './types'
+import { V3OldFarmRow } from './v3/OldFarmRow'
 
 const Container = styled.div`
   overflow: hidden;
@@ -24,51 +23,29 @@ const Container = styled.div`
 export interface ITableProps {
   title: string
   noStakedFarmText: string
-  account: string
-  cakePrice: BigNumber
+  account?: string
   columnSchema: ColumnsDefTypes[]
   farms: FarmWithStakedValue[]
   userDataReady: boolean
   sortColumn?: string
+  step?: number
 }
 
 const MigrationFarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({
   title,
   noStakedFarmText,
   account,
-  cakePrice,
   columnSchema,
   farms,
   userDataReady,
+  step,
 }) => {
   const { t } = useTranslation()
 
   const rowData = farms.map((farm) => {
-    const { token, quoteToken } = farm
-    const tokenAddress = token.address
-    const quoteTokenAddress = quoteToken.address
-    const lpLabel = farm.lpSymbol && farm.lpSymbol.split(' ')[0].toUpperCase().replace('PANCAKE', '')
-    const customRows =
-      columnSchema === DesktopV2ColumnSchema
-        ? {
-            apr: {
-              value: getDisplayApr(farm.apr, farm.lpRewardsApr),
-              pid: farm.pid,
-              multiplier: farm.multiplier,
-              lpLabel,
-              lpSymbol: farm.lpSymbol,
-              lpTokenPrice: farm.lpTokenPrice,
-              tokenAddress,
-              quoteTokenAddress,
-              cakePrice,
-              lpRewardsApr: farm.lpRewardsApr,
-              originalValue: farm.apr,
-            },
-          }
-        : { unstake: { pid: farm.pid } }
+    const lpLabel = farm.lpSymbol && farm.lpSymbol.replace(/pancake/gi, '')
 
     const row: RowProps = {
-      ...customRows,
       farm: {
         ...farm,
         label: lpLabel,
@@ -79,18 +56,20 @@ const MigrationFarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({
       },
       staked: {
         label: lpLabel,
-        pid: farm.pid,
-        stakedBalance: farm.userData.stakedBalance,
+        stakedBalance: (farm.boosted ? farm.userData?.proxy?.stakedBalance : farm.userData?.stakedBalance) ?? BIG_ZERO,
       },
+      unstake: { pid: farm.pid, vaultPid: farm.vaultPid, farm },
       earned: {
-        earnings: getBalanceNumber(new BigNumber(farm.userData.earnings)),
+        earnings: farm.boosted
+          ? getBalanceNumber(farm.userData?.proxy?.earnings)
+          : getBalanceNumber(farm.userData ? new BigNumber(farm.userData.earnings) : BIG_ZERO),
         pid: farm.pid,
       },
       liquidity: {
-        liquidity: farm.liquidity,
+        liquidity: farm.liquidity ?? BIG_ZERO,
       },
       multiplier: {
-        multiplier: farm.multiplier,
+        multiplier: farm.multiplier ?? '',
       },
     }
 
@@ -127,7 +106,6 @@ const MigrationFarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({
     })
     return newRow
   })
-
   return (
     <Container>
       <TableHeader title={title} />
@@ -142,10 +120,10 @@ const MigrationFarmTable: React.FC<React.PropsWithChildren<ITableProps>> = ({
         {account &&
           userDataReady &&
           sortedRows.map((row) => {
-            if (columnSchema === DesktopV2ColumnSchema) {
-              return <NewRow {...row} key={`table-row-${row.farm.pid}`} />
+            if (columnSchema === V3Step1DesktopColumnSchema) {
+              return <V3OldFarmRow step={step} {...row} key={`table-row-${row.farm.pid}`} />
             }
-            return <OldRow {...row} key={`table-row-${row.farm.pid}`} />
+            return null
           })}
       </TableStyle>
     </Container>

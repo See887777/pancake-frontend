@@ -1,4 +1,4 @@
-import styled from 'styled-components'
+import { styled } from 'styled-components'
 import { Flex, PrizeIcon, Text } from '@pancakeswap/uikit'
 import { Achievement } from 'state/types'
 import AchievementAvatar from './AchievementAvatar'
@@ -27,7 +27,7 @@ const AchievementCard: React.FC<React.PropsWithChildren<AchievementCardProps>> =
       </Details>
       <Flex alignItems="center">
         <PrizeIcon width="18px" color="textSubtle" mr="4px" />
-        <Text color="textSubtle">{achievement.points.toLocaleString()}</Text>
+        <Text color="textSubtle">{achievement.points}</Text>
       </Flex>
     </Flex>
   )

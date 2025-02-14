@@ -1,10 +1,10 @@
-import { Flex, Grid, Text, Button, Link, BinanceIcon, LinkExternal, useModal } from '@pancakeswap/uikit'
 import { useTranslation } from '@pancakeswap/localization'
-import { nftsBaseUrl, pancakeBunniesAddress } from 'views/Nft/market/constants'
+import { BinanceIcon, Button, Flex, Grid, LinkExternal, ScanLink, Text, useModal } from '@pancakeswap/uikit'
 import { NftToken } from 'state/nftMarket/types'
-import { getBscScanLinkForNft, isAddress } from 'utils'
-import EditProfileModal from 'views/Profile/components/EditProfileModal'
 import { useProfile } from 'state/profile/hooks'
+import { getBscScanLinkForNft, safeGetAddress } from 'utils'
+import { nftsBaseUrl, pancakeBunniesAddress } from 'views/Nft/market/constants'
+import EditProfileModal from 'views/Profile/components/EditProfileModal'
 import { Divider, HorizontalDivider, RoundedImage } from '../shared/styles'
 
 interface SellStageProps {
@@ -26,7 +26,9 @@ const SellStage: React.FC<React.PropsWithChildren<SellStageProps>> = ({
   const { t } = useTranslation()
   const { hasProfile } = useProfile()
   const itemPageUrlId =
-    isAddress(nftToSell.collectionAddress) === pancakeBunniesAddress ? nftToSell.attributes[0].value : nftToSell.tokenId
+    safeGetAddress(nftToSell.collectionAddress) === safeGetAddress(pancakeBunniesAddress)
+      ? nftToSell.attributes?.[0].value
+      : nftToSell.tokenId
 
   const [onEditProfileModal] = useModal(<EditProfileModal onSuccess={onSuccessEditProfile} />, false)
 
@@ -39,7 +41,7 @@ const SellStage: React.FC<React.PropsWithChildren<SellStageProps>> = ({
           <Text fontSize="12px" color="textSubtle" textAlign="right">
             {nftToSell?.collectionName}
           </Text>
-          {lowestPrice && (
+          {lowestPrice > 0 && (
             <>
               <Text small color="textSubtle">
                 {t('Lowest price')}
@@ -64,24 +66,17 @@ const SellStage: React.FC<React.PropsWithChildren<SellStageProps>> = ({
           </Text>
         </Flex>
         <Flex justifyContent="space-between" flex="3">
-          <Button
-            as={Link}
-            p="0px"
-            height="16px"
-            external
-            variant="text"
-            href={`${nftsBaseUrl}/collections/${nftToSell.collectionAddress}/${itemPageUrlId}`}
-          >
-            {t('View Item')}
-          </Button>
-          <HorizontalDivider />
           <LinkExternal
             p="0px"
             height="16px"
-            href={getBscScanLinkForNft(nftToSell.collectionAddress, nftToSell.tokenId)}
+            href={`${nftsBaseUrl}/collections/${nftToSell.collectionAddress}/${itemPageUrlId}`}
           >
-            BscScan
+            {t('View Item')}
           </LinkExternal>
+          <HorizontalDivider />
+          <ScanLink p="0px" height="16px" href={getBscScanLinkForNft(nftToSell.collectionAddress, nftToSell.tokenId)}>
+            BscScan
+          </ScanLink>
         </Flex>
       </Flex>
       <Divider />

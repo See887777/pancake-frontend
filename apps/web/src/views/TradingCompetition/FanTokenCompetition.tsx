@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useProfile } from 'state/profile/hooks'
-import { Box, useMatchBreakpoints } from '@pancakeswap/uikit'
+import { Box, useMatchBreakpoints, PageSection } from '@pancakeswap/uikit'
 import { useTradingCompetitionContractFanToken } from 'hooks/useContract'
 import useTheme from 'hooks/useTheme'
 import { API_PROFILE } from 'config/constants/endpoints'
-import { PageMeta } from 'components/Layout/Page'
 import {
   SmartContractPhases,
   CompetitionPhases,
@@ -14,9 +13,8 @@ import {
   OVER,
   REGISTRATION,
 } from 'config/constants/trading-competition/phases'
-import PageSection from 'components/PageSection'
-import useActiveWeb3React from 'hooks/useActiveWeb3React'
-import { ChainId } from '@pancakeswap/sdk'
+import { ChainId } from '@pancakeswap/chains'
+import useAccountActiveChain from 'hooks/useAccountActiveChain'
 import { DARKBG, MIDBLUEBG, MIDBLUEBG_DARK } from './pageSectionStyles'
 import Countdown from './components/Countdown'
 import FanTokenStormBunny from './pngs/fan-token-storm.png'
@@ -34,11 +32,11 @@ import TeamRanksSection from './components/TeamRanksSection'
 import PrizesInfoSection from './components/PrizesInfoSection'
 
 const FanTokenCompetition = () => {
-  const { account, chainId } = useActiveWeb3React()
+  const { account, chainId } = useAccountActiveChain()
   const { isMobile } = useMatchBreakpoints()
   const { profile, isLoading: isProfileLoading } = useProfile()
   const { isDark } = useTheme()
-  const tradingCompetitionContract = useTradingCompetitionContractFanToken(false)
+  const tradingCompetitionContract = useTradingCompetitionContractFanToken()
   const [currentPhase, setCurrentPhase] = useState(CompetitionPhases.OVER)
   const { registrationSuccessful, claimSuccessful, onRegisterSuccess, onClaimSuccess } = useRegistrationClaimStatus()
   const [userTradingInformation, setUserTradingInformation] = useState({
@@ -96,13 +94,13 @@ const FanTokenCompetition = () => {
 
   useEffect(() => {
     const fetchCompetitionInfoContract = async () => {
-      const competitionStatus = await tradingCompetitionContract.currentStatus()
+      const competitionStatus = await tradingCompetitionContract.read.currentStatus()
       setCurrentPhase(SmartContractPhases[competitionStatus])
     }
 
     const fetchUserContract = async () => {
       try {
-        const user = await tradingCompetitionContract.claimInformation(account)
+        const user = await tradingCompetitionContract.read.claimInformation([account || '0x'])
         const userObject = {
           isLoading: false,
           account,
@@ -116,7 +114,7 @@ const FanTokenCompetition = () => {
           userPointReward: user[7].toString(),
           canClaimNFT: user[8],
         }
-        setUserTradingInformation(userObject)
+        setUserTradingInformation(userObject as any)
       } catch (error) {
         console.error(error)
       }
@@ -167,7 +165,6 @@ const FanTokenCompetition = () => {
 
   return (
     <>
-      <PageMeta />
       <CompetitionPage>
         <PageSection
           style={{ paddingTop: '0px' }}
@@ -230,14 +227,14 @@ const FanTokenCompetition = () => {
         </PageSection>
         <TeamRanksSection
           image={FanTokenCakerBunny}
-          team1LeaderboardInformation={team1LeaderboardInformation}
-          team2LeaderboardInformation={team2LeaderboardInformation}
-          team3LeaderboardInformation={team3LeaderboardInformation}
-          globalLeaderboardInformation={globalLeaderboardInformation}
+          team1LeaderboardInformation={team1LeaderboardInformation as any}
+          team2LeaderboardInformation={team2LeaderboardInformation as any}
+          team3LeaderboardInformation={team3LeaderboardInformation as any}
+          globalLeaderboardInformation={globalLeaderboardInformation as any}
         />
         <PrizesInfoSection prizesInfoComponent={<FanTokenPrizesInfo />} />
         <Footer
-          shouldHideCta={shouldHideCta}
+          shouldHideCta={Boolean(shouldHideCta)}
           image={FanTokenStormBunny}
           userTradingInformation={userTradingInformation}
           currentPhase={currentPhase}

@@ -1,5 +1,5 @@
-import styled, { css, keyframes } from "styled-components";
-import { FC, useEffect } from "react";
+import { styled, css, keyframes } from "styled-components";
+import { useEffect } from "react";
 import { Box, BoxProps } from "../Box";
 
 const unmountAnimation = keyframes`
@@ -39,16 +39,20 @@ const StyledOverlay = styled(Box)<{ isUnmounting?: boolean }>`
 
 const BodyLock = () => {
   useEffect(() => {
-    document.body.style.cssText = `
+    if (document?.body?.style) {
+      document.body.style.cssText = `
       overflow: hidden;
     `;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.cssText = `
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.cssText = `
         overflow: visible;
         overflow: overlay;
       `;
-    };
+      };
+    }
+
+    return undefined;
   }, []);
 
   return null;
@@ -58,7 +62,7 @@ interface OverlayProps extends BoxProps {
   isUnmounting?: boolean;
 }
 
-export const Overlay: FC<React.PropsWithChildren<OverlayProps>> = (props) => {
+export const Overlay: React.FC<React.PropsWithChildren<OverlayProps>> = (props) => {
   return (
     <>
       <BodyLock />
